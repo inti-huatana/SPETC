@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+docs/*/main.aux
+docs/*/main.log
+docs/*/main.out
+docs/*/main.toc
+docs/*/main.bbl
+docs/*/main.blg

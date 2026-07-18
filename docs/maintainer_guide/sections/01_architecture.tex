@@ -1,0 +1,61 @@
+\section{Architecture}
+
+\subsection{Layering}
+
+\spetc{} is a flat Python package (no sub-packages) with a strict
+one-directional dependency rule: \textbf{physics modules never import the
+GUI}, and only \code{etc\_gui.py} imports Tk. The layers, bottom-up:
+
+\begin{enumerate}
+  \item \textbf{Foundations}: \code{spectral\_utils.py} (unit-aware curves,
+        coverage checks, file readers) and \code{observing\_conditions.py}
+        (scintillation, refraction/dispersion, quantization). No project
+        dependencies except each other's siblings.
+  \item \textbf{Physics core}: \code{etc\_physics.py} (radiometry, PSF,
+        S/N), \code{sky\_brightness.py} + \code{sky\_background.py} (sky
+        model), \code{ephemeris.py} (astropy coordinates, refraction,
+        airmass, parallactic angle), \code{atmospheric extinction} lives in
+        \code{etc\_physics.atmospheric\_transmission} with curve loading in
+        \code{spectral\_utils}.
+  \item \textbf{Engines}: \code{photometry.py} (\code{PhotometryETC}) and
+        \code{spectroscopy.py} (\code{SpectroscopyETC}); \code{detector.py}
+        (\code{Detector}); \code{solvers.py} (closed-form
+        exposure-for-S/N).
+  \item \textbf{Catalogues}: \code{star\_catalog.py} (template database),
+        \code{filter\_catalog.py} (SVO VOTable profiles),
+        \code{config\_manager.py} (built-in observatory presets).
+  \item \textbf{Presentation}: \code{etc\_gui.py} (Tk application, config
+        persistence, orchestration) and \code{matplotlib\_plots.py}
+        (native plot windows).
+\end{enumerate}
+
+\subsection{Data flow of one calculation}
+
+\begin{enumerate}
+  \item \code{etc\_gui.\_run\_etc} validates inputs, resolves the target
+        track with \code{ephemeris.compute\_target\_track} (refraction,
+        Pickering airmass, parallactic angle per sample).
+  \item \code{\_sky\_models\_for\_track} converts the ICRS target to
+        ecliptic/galactic latitudes and builds, per time sample, an
+        observed-sky dictionary (brightness, colour model, spectral
+        $\flam$) from \code{sky\_background} + \code{sky\_brightness}.
+  \item Per time sample, an engine object is built with four plain
+        dictionaries --- \code{telescope}, \code{detector} (a
+        \code{Detector}), \code{atmosphere}, \code{sky\_model} --- and
+        returns a result dict (photometry) or \code{pandas.DataFrame}
+        (spectroscopy).
+  \item The GUI assembles the time-series table, feeds the plot windows and
+        the Results window, and persists the configuration.
+\end{enumerate}
+
+The four-dictionary interface is the API contract: anything scriptable
+headlessly (tests, batch use) constructs those dictionaries directly, as
+\code{self\_check.py} does.
+
+\subsection{Conventions}
+
+Wavelengths are \AA{}ngstr\"om internally; every user-supplied curve
+declares its unit explicitly and is converted once on load. Radiometric
+integrals carry \code{astropy.units}. Missing wavelength coverage is a hard
+\code{ValueError}, never a silent zero. Azimuth N=0/E=90; times are UTC
+inside, converted for display only.

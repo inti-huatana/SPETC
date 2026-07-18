@@ -1,0 +1,50 @@
+\section{Troubleshooting}
+
+\begin{table}[h]
+\centering
+\caption{Common messages and their resolution.}
+\begin{tabular}{p{0.46\textwidth}p{0.48\textwidth}}
+\toprule
+Message / symptom & Cause and fix \\
+\midrule
+``\ldots covers X--Y \AA{}, but the requested calculation needs\ldots'' &
+A curve (template, QE, filter, atmosphere) does not cover the requested
+wavelengths. Narrow the range or load data with wider coverage; the ETC
+never extrapolates silently. \\
+\addlinespace
+``Target altitude is below 5 deg'' &
+The selected time puts the target too low. Move the time or check the
+coordinates; the visibility plot shows when the target rises. \\
+\addlinespace
+``The template has no positive flux in the selected magnitude bandpass'' &
+Reference filter outside the template's spectral range (e.g.\ $K$ band with
+an optical-only spectrum). Choose a filter inside the template coverage. \\
+\addlinespace
+Required exposure flagged as saturating &
+The target S/N needs a longer exposure than the brightest pixel allows.
+Use the reported maximum unsaturated exposure and stack frames. \\
+\addlinespace
+S/N of a bright star lower than expected &
+Scintillation ceiling (physical, not an error). Stack short exposures;
+larger aperture and lower airmass raise the ceiling. \\
+\addlinespace
+``Resolve name'' fails &
+SIMBAD needs internet; type coordinates manually --- nothing else requires
+the network. \\
+\addlinespace
+Filters missing at start-up &
+\code{data/filters.list} not found or empty. Each logical filter needs its
+\code{\_Vega} and \code{\_AB} XML profiles; \code{BLANK.xml} in
+\code{data/filters/} enables the unfiltered response. \\
+\addlinespace
+Slit width outside the calibrated range &
+A measured slit-$R$ curve is loaded and the requested width lies outside
+it. Change the width or remove the curve. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+If a run aborts with a Python traceback, the full text is shown in the
+error dialog: it names the offending input explicitly and is the first
+thing to attach to a bug report, together with
+\code{etc\_user\_config.json}.

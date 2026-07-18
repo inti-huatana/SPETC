@@ -1,0 +1,61 @@
+\section{Running and packaging on Windows and macOS}
+
+The code is pure Python (Tk, NumPy/SciPy/pandas, Astropy, Matplotlib,
+astroquery) with no compiled components of its own and no platform
+conditionals; porting is an installation exercise.
+
+\subsection{Windows}
+
+\begin{enumerate}
+  \item Install CPython 3.10+ from \url{python.org} (the installer bundles
+        Tk; tick ``Add python.exe to PATH''). Avoid the Microsoft Store
+        build, whose sandbox complicates file dialogs and per-user paths.
+  \item \code{py -m pip install -r requirements.txt}
+  \item Run with \code{py etc\_gui.py} from the distribution folder.
+\end{enumerate}
+
+Notes: paths are handled with \code{pathlib}, so backslashes are transparent;
+configuration files are written next to the program --- install under a
+user-writable directory, not \code{Program Files}; on high-DPI displays Tk
+scales automatically on Python $\geq$ 3.12, otherwise call
+\code{ctypes.windll.shcore.SetProcessDpiAwareness(1)} early if the UI looks
+blurry. For a self-contained distribution use PyInstaller:
+
+\begin{verbatim}
+pip install pyinstaller
+pyinstaller --windowed --name SPETC ^
+    --add-data "data;data" ^
+    --add-data "etc_sites.json;." ^
+    --add-data "observatories.json;." etc_gui.py
+\end{verbatim}
+
+Matplotlib and Astropy need no hooks beyond PyInstaller's built-ins; test
+the frozen build offline, because Astropy must fall back to its bundled
+IERS table (the code already sets \code{auto\_download = False}).
+
+\subsection{macOS}
+
+\begin{enumerate}
+  \item Install CPython from \url{python.org} (universal2; bundles a
+        private Tcl/Tk 8.6 --- do \emph{not} rely on the Apple system
+        Python). Homebrew works too: \code{brew install python-tk}.
+  \item \code{python3 -m pip install -r requirements.txt}
+  \item \code{python3 etc\_gui.py}
+\end{enumerate}
+
+Notes: on Retina displays Tk renders sharp with the python.org build;
+Gatekeeper will quarantine a PyInstaller app (\code{--windowed} produces
+\code{SPETC.app}) unless it is signed and notarized --- for personal use,
+right-click~$\to$~Open once, or clear the quarantine attribute with
+\code{xattr -dr com.apple.quarantine SPETC.app}. The case-sensitive file
+systems sometimes used on macOS are already handled: all data files are
+referenced with their exact case.
+
+\subsection{Both platforms}
+
+Keep \code{data/} beside the executable (the shipped data-directory entry
+is resolved relative to \code{etc\_gui.py}); time zones use the standard
+\code{zoneinfo} database (on Windows, \code{pip install tzdata} is pulled
+in automatically as a dependency of the requirements); and verify a port
+with the two test programs before first use --- they exercise the whole
+physics stack without opening a window.

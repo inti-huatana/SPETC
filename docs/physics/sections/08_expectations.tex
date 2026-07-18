@@ -1,0 +1,50 @@
+\section{Expected performance and limits of validity}
+\label{sec:expectations}
+
+\subsection{What to expect}
+
+\begin{itemize}
+\item \textbf{Bright stars are scintillation-limited.} For the 358-mm
+  reference telescope, a $V\simeq5$ star in \SI{60}{s} reaches
+  $\mathrm{S/N}\simeq1.3\times10^{3}$, not the $\sim2\times10^{4}$ a
+  photon-only budget would claim (Fig.~\ref{fig:snrbudget}); the ceiling
+  scales as $d^{2/3} X^{-1.75} \sqrt{t}$.
+\item \textbf{Faint limits are sky-limited.} Beyond
+  $m \gtrsim \mu_{\rm sky} - 2.5\log_{10}(\pi r^2)$ the S/N falls as
+  $10^{-0.4m}$ and doubling the exposure gains only $\sqrt{2}$.
+\item \textbf{Moonlight matters within $\sim90^\circ$.} Full Moon at
+  $30^\circ$ separation brightens the $V$ sky by $\simeq4$--5 mag
+  (Sect.~\ref{sec:sky}), turning background-limited exposures from minutes
+  into hours.
+\item \textbf{Slit spectroscopy away from the parallactic angle} loses tens
+  of per cent at the blue end already at $X = 1.5$--2
+  (Fig.~\ref{fig:dispersion}); the Results window reports $q$ at every
+  sample so the slit can be set correctly.
+\item \textbf{Star Analyser work} is photometrically generous (no slit
+  losses) but limited to $R\sim100$--200 by seeing; S/N per element of
+  several hundred in minutes is realistic for $V \lesssim 8$
+  (Fig.~\ref{fig:sa100}).
+\end{itemize}
+
+\subsection{Known approximations}
+
+The model is explicit about its accuracy floor: the $U$--$K$ sky table and
+its colour interpolation are broad-band, and the twilight/daylight bridge is
+approximate; the extinction fallback table is a smooth broad-band baseline
+until a site-specific curve is loaded; scintillation uses the classical
+Young coefficient (site-specific coefficients from \citealt{osborn2015} can
+be substituted); atmospheric dispersion in slit mode assumes the worst-case
+orientation; extended sources are uniform discs; and slitless mode awaits
+validation against a calibrated instrument. Flat-field and fringing
+residuals, cosmic rays and sky-subtraction penalties are not modelled.
+
+\subsection{Numerical verification}
+
+Two test programs ship with the code: a synthetic smoke test that pins the
+scintillation-limited photometric S/N and the per-element spectroscopic S/N
+of the reference configuration, and a regression suite that verifies, among
+others, Eq.~(\ref{eq:ks}) against the published scattering function, the
+ecliptic symmetry of the zodiacal term, Eq.~(\ref{eq:pickering}) against
+$\sec z$, the Student-$t$ Moffat coupling, the Filippenko dispersion scale,
+Eq.~(\ref{eq:sa}) for the SA100/SA200, and the extended-source area
+fractions.

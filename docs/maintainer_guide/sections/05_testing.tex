@@ -1,0 +1,28 @@
+\section{Testing}
+
+Two entry points, both dependency-light and network-free:
+
+\begin{verbatim}
+python3 self_check.py
+python3 tests/test_spectral_pipeline.py
+\end{verbatim}
+
+\code{self\_check.py} is a synthetic end-to-end smoke test of both engines
+on the 358-mm reference configuration; it pins the scintillation-limited
+photometric S/N ($\sim1.3\times10^3$) and the per-element spectroscopic S/N
+(hundreds). \code{tests/test\_spectral\_pipeline.py} holds the unit-level
+regressions: unit conversion of user curves, SVO photon/energy semantics,
+hard coverage failures, FITS atmosphere layouts, and the v10 physics checks
+--- Krisciunas--Schaefer scattering values, ecliptic symmetry and position
+dependence of the sky, van Rhijn bounds, Pickering vs.\ $\sec z$,
+parallactic-angle sign convention, Moffat wings and decentred coupling,
+Filippenko dispersion scale, scintillation and quantization magnitudes,
+SA100/SA200 dispersion, and extended-source area fractions. The file
+inserts the repository root on \code{sys.path}, so it runs from any working
+directory; it is also \code{pytest}-compatible (every test is a plain
+\code{test\_*} function).
+
+Rules: any bug fix gains a regression test that fails on the pre-fix code;
+any new physical relation gains a test pinned to a published number, not to
+the code's own output. The GUI is deliberately untested --- keep logic out
+of it and in the engines, where it is testable headlessly.

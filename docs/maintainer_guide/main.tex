@@ -1,0 +1,29 @@
+\documentclass[11pt, a4paper]{article}
+\input{preamble}
+\usepackage{longtable}
+
+\title{\spetc{} v10 --- Maintainer's Guide}
+\author{Mauro Barbieri\\\small\texttt{mauro.barbieri@pm.me}}
+\date{2007--2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Internal documentation for whoever maintains or extends \spetc{}: the
+architecture and data flow, a module-by-module reference of every source
+file and its public functions, the on-disk data and configuration formats,
+the test suites, recipes for the most common modifications, and how to run
+and package the program on Windows and macOS.
+\end{abstract}
+
+\tableofcontents
+
+\input{sections/01_architecture}
+\input{sections/02_modules}
+\input{sections/03_data_formats}
+\input{sections/04_extending}
+\input{sections/05_testing}
+\input{sections/06_porting}
+
+\end{document}

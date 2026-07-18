@@ -1,0 +1,47 @@
+\section{Spectroscopy step by step}
+\label{sec:spec-guide}
+
+\subsection{Slit spectroscopy}
+
+\begin{enumerate}
+  \item Mode \code{slit}; set the resolving power $R$ (or load a measured
+        slit-width/$R$ curve, which then overrides it), the slit width and
+        the extraction height in arcsec, and pixels per resolution element.
+  \item Set the wavelength range and the S/N reference wavelength: the
+        time-series evaluates that wavelength bin at every time sample.
+  \item Choose the \textbf{slit orientation}. \code{parallactic} assumes
+        you rotate the slit to the parallactic angle (reported in the
+        Results window for every time), avoiding atmospheric-dispersion
+        losses. \code{fixed} applies the worst-case per-wavelength loss ---
+        expect tens of per cent missing at the blue end at airmass 1.5--2.
+  \item Run. The plot window shows the detected source rate and S/N per
+        resolution element, with a manual time slider through the night.
+\end{enumerate}
+
+\subsection{Slitless spectroscopy and the Star Analyser}
+
+Mode \code{slitless}. Two ways to describe the disperser:
+
+\begin{itemize}
+  \item \textbf{Star Analyser 100/200 (recommended)}: enter the groove
+        density (100 or 200 lines/mm) and the grating-to-sensor distance in
+        mm; the dispersion in \si{\angstrom}/pixel follows from the
+        physics (an SA100 at \SI{42}{mm} on \SI{4.63}{\micro\metre} pixels
+        gives $\simeq11$ \si{\angstrom}/pixel). Optionally set the
+        first-order grating efficiency ($\sim0.5$ is realistic).
+  \item \textbf{Manual}: leave the groove density at 0 and type the
+        dispersion in \si{\angstrom}/pixel directly.
+\end{itemize}
+
+The resolution element is set by seeing, the intrinsic grating LSF and
+atmospheric dispersion; with $2$--$3''$ seeing expect $R\sim100$--200
+regardless of exposure. The cross-dispersion extraction height is the only
+aperture; there are no slit losses. Slitless results are flagged
+\emph{experimental} until validated on a calibrated instrument.
+
+\subsection{Reading the spectroscopic output}
+
+All spectroscopic counts and S/N are \textbf{per resolution element}, not
+per pixel. The Results table lists, per wavelength: the element width, the
+effective $R$, source and sky rates, S/N, peak electrons and ADU of the
+brightest pixel, the saturation flag and the maximum unsaturated exposure.

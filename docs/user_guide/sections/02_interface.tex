@@ -1,0 +1,57 @@
+\section{The main window}
+
+The window is organised in five columns, left to right.
+
+\subsection{Observation, site and target}
+
+Site selector (built-in observatories merged with your persistent
+\code{etc\_sites.json}; \textsf{Save current site} and \textsf{Import site
+file} manage it), geographic coordinates and elevation, date and UT time of
+the planned observation, the observing-interval selector, the time zone
+(IANA name with DST, e.g.\ \code{Europe/Rome}, or a fixed UTC offset), and
+the target: RA/Dec fields (decimal degrees or \code{hh:mm:ss} /
+\code{dd:mm:ss}) with the optional SIMBAD \textsf{Resolve name} button.
+Running the ETC itself never uses the network: only the coordinates in the
+fields count.
+
+\subsection{Telescope, detector and conditions}
+
+Telescope diameter, central obstruction, focal length and scalar optics
+throughput; optional calibrated instrument-response and slit
+resolving-power curves (two-column files with an explicit wavelength unit);
+detector pixel size, gain, full well, ADC bit depth, read noise and dark
+current; seeing FWHM; the sky-background mode (\code{ing} = physical
+night/twilight/day model, \code{fixed\_ab} = your own observed sky surface
+brightness); and the \textbf{PSF model} (\code{gaussian} or \code{moffat}
+with its $\beta$; Moffat reproduces the wings of real star images and is
+recommended). \textsf{Save/Load instrument profile} stores the whole column
+as a portable JSON with its QE and response curves.
+
+\subsection{Calculation settings}
+
+Photometry or spectroscopy; exposure time; optional \textbf{target S/N}
+(when set, the ETC returns the required exposure instead, flagging
+saturation). The photometry panel adds the aperture radius and the
+\textbf{source geometry}: \code{point}, or \code{extended} with the source
+area in arcsec$^2$ for galaxies, nebulae and planets (the magnitude you
+enter stays the \emph{total} integrated magnitude). The spectroscopy panel
+holds the resolving power, slit width, extraction height, sampling, the
+slitless parameters (Sect.~\ref{sec:spec-guide}), the wavelength range and
+the S/N reference wavelength, and the \textbf{slit orientation}
+(\code{parallactic} or \code{fixed}).
+
+\subsection{Filter and template selection}
+
+Two independent filters: the \textbf{reference} filter, in which your
+magnitude is expressed (Vega or AB), and the \textbf{observing} filter,
+physically in the beam for both photometry and spectroscopy (spectroscopy
+defaults to \code{BLANK}, the unfiltered response). The panel previews the
+observing transmission curve with its pivot wavelength, width and zero
+point; the template selector searches the catalogue by name and previews
+the selected flux distribution; \textsf{Validate V and B$-$V} checks the
+template's synthetic colours against the catalogue.
+
+\subsection{Run actions}
+
+\textsf{Run ETC}, the live observatory status (Sun/Moon altitude, current
+airmass of the target), and \textsf{Exit} (which saves the configuration).

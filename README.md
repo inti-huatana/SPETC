@@ -134,13 +134,35 @@ automatically restored with that profile.
   separately from `qe.dat`. Until a site-specific extinction curve is added,
   zenith atmospheric transmission is constructed from the supplied U--K
   `skyext` broad-band values and applied as `T_zenith^airmass` to the source.
-* Photometry includes Gaussian aperture losses, sky aperture area, dark current
-  and read noise. Spectroscopy supports `slit` and generic `slitless` modes.
-  Slit mode uses both slit-width and finite extraction-height losses. Slitless
-  mode uses cross-dispersion extraction geometry and derives effective resolution
-  from dispersion, seeing, pixel scale and intrinsic LSF width. Source rates
-  and S/N are per resolution element. Slitless remains explicitly
-  **experimental** until it is validated with a calibrated instrument.
+* The PSF is selectable: **Gaussian** or **Moffat** (beta > 1, default 2.5).
+  The Moffat option reproduces the extended wings of real seeing-limited
+  images in aperture, slit and extraction losses (its slit coupling uses the
+  exact Student-t marginal of the circular Moffat profile).
+* Photometry includes PSF aperture losses, sky aperture area, dark current,
+  read noise, **Young-law scintillation** and **ADC quantization**
+  (gain/sqrt(12)) noise. Sources can be **point** or **extended**
+  (galaxy/nebula/planet): extended sources keep the entered integrated
+  magnitude spread uniformly over a stated angular area, with area-fraction
+  aperture capture and a surface-brightness peak pixel (valid when the source
+  is much larger than the seeing disc). Spectroscopy supports `slit` and
+  `slitless` modes. Slit mode uses both slit-width and finite
+  extraction-height losses; with the slit **not** at the parallactic angle it
+  additionally applies the per-wavelength Filippenko (1982)
+  atmospheric-dispersion offset loss (worst-case geometry). Slitless mode
+  uses cross-dispersion extraction geometry and derives effective resolution
+  from dispersion, seeing, pixel scale, intrinsic LSF width and the
+  atmospheric-dispersion smear. A transmission grating such as the
+  **Star Analyser 100/200** is described physically by its groove density and
+  grating-to-sensor distance (dispersion `1e4 p_um / (L_mm n_mm m)` A/pixel;
+  an SA100 at 42 mm on 4.63 um pixels gives ~11 A/pixel) plus an optional
+  first-order efficiency. Source rates and S/N are per resolution element.
+  Slitless remains explicitly **experimental** until it is validated with a
+  calibrated instrument.
+* The ING sky model is position-dependent: van Rhijn airglow (solar-cycle
+  scaled), zodiacal light at the field's |ecliptic latitude| and integrated
+  starlight at its |galactic latitude| correct the tabulated U--K dark sky;
+  the Moon term uses the published Krisciunas & Schaefer (1991) scattering
+  function. The Results window reports the sky surface brightness used.
 * Saturation output preserves unclipped peak electrons/ADU and labels the
   cause as `NONE`, `FULL_WELL`, `ADC`, or `BOTH`. Time-series CSV files include
   the reference-bin saturation flag, peak electron prediction and the maximum
@@ -149,8 +171,13 @@ automatically restored with that profile.
 * High-resolution spectroscopic time series evaluate only the reference bin at
   every time point; full spectra are calculated only for the selected time and
   the manual native plot slider positions.
-* Azimuth is N=0, E=90, S=180, W=270. Visibility uses Astropy `AltAz`.
-  Airmass is not calculated or plotted below altitude 5 degrees. Plot ticks
+* Azimuth is N=0, E=90, S=180, W=270. Visibility uses Astropy `AltAz` with
+  ERFA atmospheric refraction at ISA site pressure/temperature; airmass is
+  Pickering (2002) on the apparent altitude, which stays physical at low
+  altitude where plane-parallel sec z overestimates. The parallactic angle is
+  reported for every time sample (slit at that angle avoids
+  atmospheric-dispersion slit losses). Airmass is not calculated or plotted
+  below altitude 5 degrees. Plot ticks
   show both UTC and local time. Local conversion uses either a selectable IANA
   timezone (default `Europe/Rome`, including daylight-saving changes) or a
   mutually exclusive fixed UTC offset.
@@ -178,5 +205,11 @@ python3 tests/test_spectral_pipeline.py
 
 It uses synthetic flat spectra and a top-hat bandpass. It checks that the
 default 358-mm reference setup produces an optical S/N of order hundreds per
-R=10000 resolution element, not thousands, and that the broad-band result is
-of order 10^4 rather than 10^5 for a 60-s AB=5 target.
+R=10000 resolution element, not thousands, and that the broad-band result for
+a 60-s AB=5 target is scintillation-limited near S/N ~ 1.3e3 (the Young-law
+fractional rms caps bright-star photometry; a pure Poisson model would claim
+~2e4). The pipeline test also includes regression checks of the
+Krisciunas & Schaefer scattering function, position-dependent sky, Pickering
+airmass, parallactic angle, Moffat PSF, Filippenko dispersion, scintillation
+and quantization noise scales, Star Analyser dispersion and extended-source
+photometry.

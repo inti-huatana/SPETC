@@ -1,0 +1,68 @@
+\section{Radiometric framework}
+\label{sec:radiometry}
+
+\subsection{Magnitude systems and zero points}
+
+A magnitude $m$ in a system with $F_\nu$ zero point $Z_\nu$ (in Jy)
+corresponds to the monochromatic flux density
+\begin{equation}
+  \flam(\lambda) \;=\; Z_\nu \, \frac{c}{\lambda^2}\; 10^{-0.4\,m},
+  \label{eq:flam}
+\end{equation}
+which the code evaluates with \code{astropy} units
+(\code{magnitude\_f\_lambda}). The AB system \citep{oke1983} uses
+$Z_\nu = \SI{3631}{Jy}$ at every wavelength; Vega systems use the per-filter
+zero points delivered inside each SVO filter profile
+\citep{rodrigo2020,bessell1998}.
+
+\subsection{Synthetic photometry (SVO convention)}
+
+The synthetic magnitude of a spectrum $\flam$ in a filter with response
+$T_\lambda$ is
+\begin{equation}
+  m \;=\; -2.5\,\log_{10}
+  \frac{\displaystyle\int \flam\,T_\lambda\, W_\lambda\, d\lambda}
+       {\displaystyle\int \flam^{\,0}\,T_\lambda\, W_\lambda\, d\lambda},
+  \qquad
+  W_\lambda = \begin{cases}\lambda & \text{photon counter}\\
+                            1 & \text{energy integrator,}\end{cases}
+  \label{eq:synthmag}
+\end{equation}
+where $\flam^{\,0}$ is the zero-magnitude spectrum of
+Eq.~(\ref{eq:flam}) and the weighting follows the SVO
+\code{DetectorType} flag of the profile. Both conventions are implemented and
+regression-tested; for a coloured source they differ measurably.
+
+\subsection{Template calibration}
+\label{sec:template}
+
+Template spectra are absolutely calibrated CALSPEC/BPGS spectrophotometry
+\citep{bohlin2014}; the catalogue field $m_{v0}$ records the visual magnitude
+represented by each file. The code first restores the visual-zero
+distribution, $\flam \rightarrow \flam\,10^{0.4 m_{v0}}$ (the original
+Fortran convention), then scales it to the user's reference measurement:
+\begin{equation}
+  \flam^{\rm cal} \;=\; \flam\,10^{0.4 m_{v0}}\;
+  10^{-0.4\,\left[m_{\rm ref} - (m_{\rm ref}^{\rm syn}-m_{V}^{\rm syn})\right]},
+\end{equation}
+where the synthetic colour term $(m_{\rm ref}^{\rm syn}-m_{V}^{\rm syn})$ is
+computed from the template itself with Eq.~(\ref{eq:synthmag}) whenever the
+reference filter differs from the visual response, and is exactly zero in the
+original $V$-only case, which then reduces to the Fortran scale factor
+$10^{-0.4(V_{\rm target}-m_{v0})}$.
+
+\subsection{Detected electron rate}
+
+The photo-electron rate through the full system is
+\begin{equation}
+  \dot S \;=\; A\,\eta \int
+  \flam^{\rm cal}\; T_\lambda\, Q_\lambda\, O_\lambda\,
+  T_{\rm atm}(\lambda)^{X}\;
+  \frac{\lambda}{hc}\; d\lambda ,
+  \label{eq:rate}
+\end{equation}
+with the trapezoidal quadrature carried out on the filter grid
+(photometry) or per resolution element (spectroscopy). Wavelength coverage is
+a hard requirement: a template, QE curve, filter or atmospheric table that
+does not cover the requested interval raises an error instead of silently
+zero-filling.

@@ -1,0 +1,47 @@
+\section{Results, plots and export}
+
+\subsection{The Results window}
+
+Three tabs:
+\begin{itemize}
+  \item \textbf{Selected-time result}: the numerical table for the chosen
+        time (magnitude row in photometry; per-wavelength rows in
+        spectroscopy).
+  \item \textbf{Time series}: one row per time sample with UTC and local
+        time, MJD, elevation, azimuth, \textbf{parallactic angle}, airmass
+        (Pickering, refraction-corrected), S/N or required exposure,
+        \textbf{sky surface brightness} actually used, band-effective
+        extinction and its per-airmass coefficient, the
+        absorption-adjusted apparent magnitude, saturation flag, peak
+        electrons and maximum unsaturated exposure. This table is the CSV
+        export.
+  \item \textbf{Assumptions / visibility}: a plain-language statement of
+        every physical assumption of the current run --- sky model and its
+        components, PSF model, noise terms, saturation policy --- plus the
+        selected-time altitude, airmass, parallactic angle and sky
+        brightness.
+\end{itemize}
+
+\subsection{Scientific plots}
+
+The native Matplotlib window provides pan/zoom/save, manual axis limits
+(time axes accept ISO timestamps), autoscale per panel, and in
+spectroscopy a manual slider that walks the sampled times of the observing
+interval, updating the spectrum panels and the markers. The sky-path panel
+shows target, Sun (daytime only) and Moon (only above the horizon) in
+altitude--azimuth (N=0$^\circ$, E=90$^\circ$).
+
+\subsection{Practical notes}
+
+\begin{itemize}
+  \item The Moon's effect is included automatically in \code{ing} sky mode
+        whenever it is above the horizon; within $\sim30^\circ$ of a bright
+        Moon expect the sky several magnitudes brighter.
+  \item In \code{fixed\_ab} mode the entered sky brightness is used as-is
+        at every time --- use it when you have a measured value.
+  \item Airmass and all results are deliberately unavailable below
+        $5^\circ$ altitude.
+  \item Save an \textbf{instrument profile} once your telescope/detector
+        column is right; it restores automatically at start-up and travels
+        with its QE/response files.
+\end{itemize}

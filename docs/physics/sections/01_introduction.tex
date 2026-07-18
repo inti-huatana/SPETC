@@ -1,0 +1,68 @@
+\section{Introduction}
+\label{sec:intro}
+
+An exposure time calculator answers two reciprocal questions: what
+signal-to-noise ratio (S/N) a given exposure of a given target will reach, and
+how long an exposure is needed to reach a requested S/N. \spetc{} answers both
+for broad-band aperture photometry and for slit or slitless spectroscopy, for
+any telescope--detector combination the user describes, at any site, time and
+sky position.
+
+The code descends from the Fortran \code{interpola\_spad} programs (2007) and
+retains their template-calibration convention
+(Sect.~\ref{sec:template}), while the physics has been rebuilt in Python on
+\code{astropy} \citep{astropy2022}: all radiometric quantities carry explicit
+units, all coordinate and time transformations use IERS-based ERFA routines,
+and every empirical relation is taken from the published literature cited in
+the section where it is used.
+
+Version 10 upgrades the physical model in six areas, each described in its own
+section below:
+\begin{enumerate}
+  \item a position-dependent night-sky model with van Rhijn airglow, zodiacal
+        light, integrated starlight, and the \citet{krisciunas1991} moonlight
+        model with the published scattering function (Sect.~\ref{sec:sky});
+  \item atmospheric refraction and the \citet{pickering2002} airmass
+        (Sect.~\ref{sec:airmass});
+  \item selectable Gaussian or \citet{moffat1969} point-spread functions
+        (Sect.~\ref{sec:psf});
+  \item a noise budget extended with \citet{young1967} scintillation,
+        \citet{filippenko1982} atmospheric dispersion and ADC quantization
+        noise (Sects.~\ref{sec:dispersion}, \ref{sec:noise});
+  \item transmission-grating (Star Analyser 100/200) slitless spectroscopy
+        (Sect.~\ref{sec:slitless});
+  \item extended sources: galaxies, nebulae and planets treated as uniform
+        surface brightness (Sect.~\ref{sec:extended}).
+\end{enumerate}
+
+Throughout, wavelengths are in \AA{}ngstr\"om internally, fluxes are
+$\flam$ in \si{erg.s^{-1}.cm^{-2}.\angstrom^{-1}}, and detected signals are in
+photo-electrons. The notation is summarized in Table~\ref{tab:symbols}.
+
+\begin{table}
+\centering
+\caption{Principal symbols.}
+\label{tab:symbols}
+\begin{tabular}{ll}
+\toprule
+Symbol & Meaning \\
+\midrule
+$\flam$        & spectral flux density [\si{erg.s^{-1}.cm^{-2}.\angstrom^{-1}}] \\
+$A$            & unobstructed collecting area $\pi(D^2-d^2)/4$ \\
+$T_\lambda$    & filter transmission (0--1) \\
+$Q_\lambda$    & detector quantum efficiency (0--1) \\
+$\eta$         & scalar optics throughput excluding QE \\
+$O_\lambda$    & optional calibrated instrument response curve \\
+$T_{\rm atm}(\lambda)$ & zenith atmospheric transmission \\
+$X$            & airmass \\
+$z$            & zenith distance; $h$ apparent altitude \\
+$s$            & seeing FWHM [arcsec] \\
+$q$            & parallactic angle \\
+$S,B,D$        & source, sky, dark electrons in the aperture \\
+$\sigma_R$     & read noise per pixel [e$^-$ rms] \\
+$g$            & gain [e$^-$/ADU] \\
+$N_{\rm pix}$  & pixels in the photometric aperture or extraction \\
+$R$            & resolving power $\lambda/\Delta\lambda$ \\
+\bottomrule
+\end{tabular}
+\end{table}

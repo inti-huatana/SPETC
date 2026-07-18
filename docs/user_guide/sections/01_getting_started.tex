@@ -1,0 +1,42 @@
+\section{Getting started}
+
+\subsection{Requirements and installation}
+
+\spetc{} needs Python 3.10 or later with Tk support. Install the
+dependencies and start the program from the distribution directory:
+
+\begin{verbatim}
+python3 -m pip install -r requirements.txt
+python3 etc_gui.py
+\end{verbatim}
+
+The \code{data/} directory shipped with the program must stay beside
+\code{etc\_gui.py}; it contains the stellar template catalogue
+(\code{interpola.db.csv} and the CALSPEC/BPGS spectra), the default detector
+QE curve (\code{qe.dat}), the SVO filter profiles with their list
+(\code{filters.list}), the optional \code{BLANK.xml} unfiltered passband and
+the optional Earth-atmosphere FITS table. The data directory can also be
+pointed elsewhere from the \textsf{Stellar template selector} panel.
+
+\subsection{First launch}
+
+On start-up \spetc{} restores the last saved configuration from
+\code{etc\_user\_config.json} (created automatically; the default preset is
+Asiago/Cima Ekar) and the most recently used instrument profile, if any. The
+configuration is re-saved after every successful calculation and on normal
+exit, so the program always reopens as you left it.
+
+\subsection{A one-minute first calculation}
+
+\begin{enumerate}
+  \item Pick a site from the \textsf{Observatory} selector (or type
+        latitude, longitude, elevation).
+  \item Set the date and UT time, or leave the current time.
+  \item Type target coordinates (decimal or sexagesimal), or type a name and
+        press \textsf{Resolve name} (needs internet; nothing else ever
+        does).
+  \item Select an observing filter and a stellar template; enter the target
+        magnitude.
+  \item Press \textsf{Run ETC}. The Results window opens with the numbers;
+        the plot window shows S/N versus time, altitude, and the sky path.
+\end{enumerate}

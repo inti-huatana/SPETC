@@ -21,6 +21,31 @@ against the shipped SVO profiles). Add the two printed lines to
 \code{data/filters.list} and the filter appears in the selector on the
 same photometric scale as the professional passbands.
 
+\subsection{Importing template spectra: \code{add\_template.py}}
+
+Template spectra can be two-column ASCII \emph{or} CALSPEC/STScI-style
+FITS tables (\code{WAVELENGTH}/\code{FLUX}; Angstrom, nm or micron units
+read from \code{TUNIT}). To add a single file or an entire directory ---
+e.g.\ the whole CALSPEC archive folder:
+
+\begin{verbatim}
+python3 add_template.py current_calspec/
+python3 add_template.py my_spectrum.fits "HD 12345" G2V
+\end{verbatim}
+
+For each spectrum the tool copies the file under \code{data/imported/},
+computes the synthetic Vega $V$ magnitude (the catalogue \code{mv0}) and
+$B-V$ against the shipped Bessell profiles, cleans CALSPEC filename
+suffixes for the display name (\code{alpha\_lyr\_stis\_011} $\to$
+\code{alpha\_lyr}), reports the $V$-band coverage, and appends the row to
+\code{data/interpola.db.csv} --- the file the GUI template list is built
+from. Press \textsf{Reload catalog} (or restart) and the new templates
+appear in the selector. Surface-brightness and arbitrary-flux files
+(planet atlas, supernova templates) are fully usable: the ETC rescales
+every template to your entered magnitude, so only the spectral shape and
+the computed \code{mv0} matter. Files that do not fully cover the $V$
+band are flagged; use $V$ as the reference filter for those.
+
 \subsection{Headless runs: \code{spetc\_batch.py}}
 
 \begin{verbatim}

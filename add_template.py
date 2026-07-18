@@ -27,6 +27,7 @@ the relative calibration matter, and ``mv0`` makes the normalization
 self-consistent.
 """
 
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -40,6 +41,24 @@ from star_catalog import load_fits_spectrum, parse_interpola_db
 DATA_DIR = Path(__file__).resolve().parent / "data"
 IMPORT_SUBDIR = "imported"
 SPECTRUM_SUFFIXES = (".fits", ".fit", ".ascii", ".dat", ".txt")
+
+
+# CALSPEC filename suffixes: instrument/source tokens followed by a 3-digit
+# version, e.g. alpha_lyr_stis_011, agk_81d266_stisnic_007, sun_mod_001.
+_CALSPEC_INSTRUMENT_TOKENS = {
+    "stis", "nic", "stisnic", "stiswfc", "stiswfcnic", "fos", "iue", "oke",
+    "mod", "model", "wfirc", "wfc3", "uvis", "cohen", "reference",
+}
+
+
+def _clean_display_name(stem):
+    """Strip CALSPEC instrument+version suffixes for the catalogue name."""
+    tokens = stem.split("_")
+    if tokens and re.fullmatch(r"\d{3}", tokens[-1]):
+        tokens = tokens[:-1]
+        while tokens and tokens[-1].lower() in _CALSPEC_INSTRUMENT_TOKENS:
+            tokens = tokens[:-1]
+    return "_".join(tokens) or stem
 
 
 def _read_spectrum(path):
@@ -90,7 +109,7 @@ def import_template(path, name=None, spectral_type="", data_dir=DATA_DIR):
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, destination)
         relative = destination.relative_to(data_dir)
-    display_name = (name or path.stem)[:24].replace(",", " ")
+    display_name = (name or _clean_display_name(path.stem))[:24].replace(",", " ")
     catalog_path = data_dir / "interpola.db.csv"
     existing = {record.name.lower() for record in parse_interpola_db(catalog_path)}
     if display_name.lower() in existing:

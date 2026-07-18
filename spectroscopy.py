@@ -230,7 +230,12 @@ class SpectroscopyETC:
                                                   psf_model, moffat_beta)
             spatial_pixels = max(cross_dispersion_height / plate_scale, 1.0)
             sky_area = (dispersion_pixels_per_resel * plate_scale) * cross_dispersion_height
-        n_pixels = max(dispersion_pixels_per_resel * spatial_pixels, 1.0)
+        # OSC single-channel extraction: rates and channel-pixel counts scale
+        # by the Bayer fill fraction; the peak pixel (from the unextracted
+        # rates further below) does not.
+        fill = self.detector.channel_fill_fraction
+        source_fraction = source_fraction * fill
+        n_pixels = max(dispersion_pixels_per_resel * spatial_pixels * fill, 1.0)
 
         # Midpoint integration is accurate for each narrow resolution element
         # and, unlike an Astropy loop for every bin, remains responsive at
@@ -263,7 +268,7 @@ class SpectroscopyETC:
             sky_flam = magnitude_f_lambda(wave, sky_zero_point_jy) * 10.0**(-0.4 * sky_mag_at_wave) * sky_area
         sky_transmission = np.ones_like(atmosphere_trans) if self.sky_model.get("sky_at_telescope", False) else atmosphere_trans
         sky_rates = (sky_flam * observing_transmission * qe * instrument_trans * sky_transmission * area * efficiency / photon_energy
-                     * dlam).to_value(1 / u.s) * grating_efficiency
+                     * dlam).to_value(1 / u.s) * grating_efficiency * fill
         source_e_unextracted = source_rates_unextracted * t_exp_s
         source_e = source_rates * t_exp_s
         sky_e = sky_rates * t_exp_s

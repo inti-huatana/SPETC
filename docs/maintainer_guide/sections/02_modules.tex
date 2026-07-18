@@ -68,7 +68,10 @@ terms, dispersion).
 \code{Detector} stores pixel size, gain, full well, bit depth, read noise,
 dark current; \code{counts\_to\_adu} and \code{saturation\_flag}
 (\code{FULL\_WELL}/\code{ADC}/\code{BOTH}/\code{NONE});
-\code{load\_gain\_table} reads the per-setting CMOS tables (Sect.~3).
+\code{load\_gain\_table} reads the per-setting CMOS tables (Sect.~3);
+\code{sensor\_type}/\code{osc\_channel} select mono or a Bayer channel,
+whose \code{channel\_fill\_fraction} (G 1/2, R/B 1/4) both engines apply
+to aperture rates and channel-pixel counts but not to the peak pixel.
 \code{solvers.exposure\_time\_for\_snr} inverts the CCD equation in closed
 form, with \code{extra\_variance\_rate\_e2\_s} absorbing time-linear
 non-Poisson terms (scintillation); \code{solvers.plan\_stack} produces the
@@ -90,7 +93,9 @@ result CSV plus a self-contained HTML summary with an embedded S/N figure
 \subsection{\code{star\_catalog.py}, \code{filter\_catalog.py},
 \code{config\_manager.py}}
 Catalogue parsing (\code{interpola.db.csv} $\to$ \code{StarRecord};
-spectrum loading with monotonicity cleanup), SVO VOTable parsing
+spectrum loading with monotonicity cleanup; \code{load\_fits\_spectrum}
+reads CALSPEC/STScI binary tables with TUNIT-aware wavelength conversion,
+dispatched by file extension), SVO VOTable parsing
 (\code{FilterProfile} with zero point, \code{DetectorType}, metadata in
 \AA{}; \code{BLANK} special-cased to the AB scale), and the built-in
 observatory presets from \code{observatories.json}.

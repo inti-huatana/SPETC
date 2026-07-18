@@ -20,7 +20,10 @@ Telescope diameter, central obstruction, focal length and scalar optics
 throughput; optional calibrated instrument-response and slit
 resolving-power curves (two-column files with an explicit wavelength unit);
 detector pixel size, gain, full well, ADC bit depth, read noise and dark
-current; a \textbf{CMOS gain table} (a text file with one row per gain
+current; the \textbf{sensor type} (\code{mono}, or \code{osc} with the
+R/G/B channel: aperture rates and pixel counts scale by the Bayer fill
+fraction, saturation stays per physical pixel; use the channel's effective
+QE curve); a \textbf{CMOS gain table} (a text file with one row per gain
 setting: setting, e$^-$/ADU, read noise, full well — published by camera
 makers and measured on PhotonsToPhotos): pick the setting and the three
 detector fields fill consistently; seeing FWHM; the sky-background mode

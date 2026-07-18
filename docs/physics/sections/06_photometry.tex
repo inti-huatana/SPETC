@@ -102,6 +102,21 @@ Eq.~(\ref{eq:snr}), the quantization term $g^2/12$ and the saturation
 limits simultaneously, so switching the gain setting consistently moves
 the S/N, the ADC ceiling and the maximum unsaturated exposure.
 
+\subsection{One-shot-colour (Bayer) sensors}
+\label{sec:osc}
+
+For a colour camera read out as a single channel, the Bayer mosaic assigns
+the channel a fixed area fraction $f$ of the focal plane ($f = 1/2$ for
+green, $1/4$ for red and blue). Aperture- or extraction-integrated source
+and sky rates therefore scale by $f$, and only $f N_{\rm pix}$ of the
+aperture pixels contribute read and dark noise for that channel. The
+\emph{peak pixel} is not scaled: a channel pixel at the PSF centre receives
+the full local flux through its own dye, so saturation prediction is
+unchanged. The quantum-efficiency curve must be the channel's
+\emph{effective} QE — sensor QE times the colour-filter-array dye
+transmission — which manufacturers publish per channel. Without this
+treatment an OSC user overestimates the collected signal by $2$--$4\times$.
+
 \subsection{Saturation}
 
 Saturation is evaluated on the brightest pixel of the \emph{unextracted}

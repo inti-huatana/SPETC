@@ -111,7 +111,14 @@ class PhotometryETC:
                           if self.sky_model.get("sky_at_telescope", False) else self.atmosphere)
         sky_rate = electron_rate(wave, sky_flam, transmission, qe, self.telescope, sky_atmosphere)
 
-        n_pixels = max(aperture_area / plate_scale**2, 1.0)
+        # One-shot-colour sensors: a single-channel extraction sees only the
+        # channel's share of the Bayer mosaic - aperture rates and the
+        # channel-pixel count scale by the fill fraction; the peak pixel does
+        # not (a centred channel pixel receives the full local flux).
+        fill = self.detector.channel_fill_fraction
+        source_rate = source_rate * fill
+        sky_rate = sky_rate * fill
+        n_pixels = max(aperture_area / plate_scale**2 * fill, 1.0)
         source_e = source_rate.to_value(1 / u.s) * t_exp_s
         sky_e = sky_rate.to_value(1 / u.s) * t_exp_s
         dark_e = self.detector.dark_current_e_s_pix * n_pixels * t_exp_s

@@ -122,6 +122,13 @@ automatically restored with that profile.
 * **SQM / Bortle sky mode**: enter your zenith SQM reading (V mag/arcsec²),
   or pick a Bortle class to fill a typical value; band colours and the
   Krisciunas & Schaefer Moon model are applied on top.
+* **One-shot-colour (Bayer/OSC) sensors**: select `osc` and the channel
+  (R/G/B). A single-channel extraction sees only that channel's share of
+  the mosaic (G 1/2, R/B 1/4): aperture source and sky rates and the
+  channel-pixel count scale accordingly, while the peak pixel does not (a
+  centred channel pixel still receives the full local flux), so saturation
+  stays correct. Supply the channel's *effective* QE (sensor QE × CFA dye
+  transmission, digitizable from the maker's curves) as the QE curve.
 * **Stack planner**: with a target S/N, the ETC reports N × sub-exposure
   (sub capped by saturation or your preference), total time, the
   read-noise penalty versus one ideal exposure, and the frame length above

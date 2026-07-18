@@ -363,6 +363,44 @@ def test_fits_spectrum_loader_calspec_convention():
         assert np.isclose(spectrum2[0, 0], 5300.0) and np.isclose(spectrum2[-1, 0], 287500.0)
 
 
+def test_osc_channel_scales_rates_and_pixels_not_peak():
+    """OSC green channel: aperture rates and pixel count halve; the peak
+    pixel is unchanged (a centred channel pixel sees the full local flux)."""
+    from photometry import PhotometryETC
+    wavelength = np.linspace(4000.0, 7000.0, 200)
+    template = np.column_stack((wavelength, np.full_like(wavelength, 1e-11)))
+    band = np.column_stack((wavelength, np.ones_like(wavelength)))
+    qe = np.column_stack((wavelength, np.full_like(wavelength, 0.8)))
+    telescope = {"diameter_mm": 358.0, "obstruction_mm": 87.5, "efficiency": 0.7, "focal_length_mm": 2000.0}
+    atmosphere = {"airmass": 1.0, "seeing_arcsec": 2.0, "transmission_curve": None}
+    sky = {"sky_mag": 20.0, "sky_zero_point_jy": 3631.0, "sky_at_telescope": True,
+           "aperture_radius_arcsec": 3.0}
+    mono = Detector(4.63, 1.0, 51000, 14, 1.5, 0.0)
+    osc = Detector(4.63, 1.0, 51000, 14, 1.5, 0.0, sensor_type="osc", osc_channel="G")
+    r_mono = PhotometryETC(telescope, mono, atmosphere, sky).compute_photometry_single(
+        template, band, qe, 10.0, 60.0)
+    r_osc = PhotometryETC(telescope, osc, atmosphere, sky).compute_photometry_single(
+        template, band, qe, 10.0, 60.0)
+    assert np.isclose(r_osc["photons_source_es"] / r_mono["photons_source_es"], 0.5)
+    assert np.isclose(r_osc["photons_sky_es"] / r_mono["photons_sky_es"], 0.5)
+    assert np.isclose(r_osc["n_pixels"] / r_mono["n_pixels"], 0.5)
+    assert np.isclose(r_osc["peak_e_unclipped"], r_mono["peak_e_unclipped"], rtol=1e-6)
+    red = Detector(4.63, 1.0, 51000, 14, 1.5, 0.0, sensor_type="osc", osc_channel="R")
+    r_red = PhotometryETC(telescope, red, atmosphere, sky).compute_photometry_single(
+        template, band, qe, 10.0, 60.0)
+    assert np.isclose(r_red["photons_source_es"] / r_mono["photons_source_es"], 0.25)
+
+
+def test_calspec_display_name_cleaning():
+    from add_template import _clean_display_name
+    assert _clean_display_name("alpha_lyr_stis_011") == "alpha_lyr"
+    assert _clean_display_name("agk_81d266_stisnic_007") == "agk_81d266"
+    assert _clean_display_name("sun_mod_001") == "sun"
+    assert _clean_display_name("1740346_nic_002") == "1740346"
+    assert _clean_display_name("jupiter_solsys_surfbright_001") == "jupiter_solsys_surfbright"
+    assert _clean_display_name("random_name") == "random_name"
+
+
 def test_filter_profile_builder_matches_svo_scale():
     """Synthetic Vega zero point of the shipped Bessell.V profile must land
     within ~1% of the SVO-declared value."""
@@ -385,6 +423,8 @@ if __name__ == "__main__":
     test_sigma_ew_column_present_and_scales_inversely_with_snr()
     test_target_snr_solver_includes_scintillation()
     test_fits_spectrum_loader_calspec_convention()
+    test_osc_channel_scales_rates_and_pixels_not_peak()
+    test_calspec_display_name_cleaning()
     test_filter_profile_builder_matches_svo_scale()
     test_spectroscopic_observing_filter_applies_to_source_and_sky()
     test_fits_atmosphere_wavelength_unit_is_honoured()

@@ -51,6 +51,21 @@ reference filter differs from the visual response, and is exactly zero in the
 original $V$-only case, which then reduces to the Fortran scale factor
 $10^{-0.4(V_{\rm target}-m_{v0})}$.
 
+\subsection{Template sources}
+
+Templates are two-column ASCII or CALSPEC/STScI-style FITS binary tables
+(\code{WAVELENGTH}/\code{FLUX}, TUNIT-aware), which admits the whole STScI
+reference-atlas family: the CALSPEC standards, the solar-system
+surface-brightness atlas, the galactic emission-line atlas, the transient
+templates and the CLOUDY planetary-nebula grids. On import, the synthetic
+Vega $V$ magnitude of each file is computed against the shipped Bessell.V
+profile and stored as the catalogue $m_{v0}$; since the ETC rescales every
+template to the entered target magnitude, files with arbitrary or
+surface-brightness flux units remain fully usable — only the spectral shape
+and the self-consistent $m_{v0}$ matter. Templates that do not fully cover
+the $V$ response carry an approximate $m_{v0}$ and should be used with $V$
+as the reference filter (the exact same-response path).
+
 \subsection{Detected electron rate}
 
 The photo-electron rate through the full system is

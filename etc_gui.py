@@ -300,6 +300,18 @@ class ETCGUI(tk.Tk):
 #        ttk.Label(f, text="Optics response: wavelength, throughput excluding QE. qe.dat is loaded separately.\n"
 #                          "Slit R(width): slit width [arcsec], measured resolving power R.",
 #                  foreground="gray35", wraplength=300, justify="left").grid(row=14, column=0, columnspan=2, sticky="w", pady=(3, 0))
+        self.sensor_type_var = self._var("sensor_type", "mono")
+        self.osc_channel_var = self._var("osc_channel", "G")
+        ttk.Label(f, text="Sensor type:").grid(row=17, column=0, sticky="w")
+        sensor_row = ttk.Frame(f); sensor_row.grid(row=17, column=1, sticky="ew")
+        ttk.Combobox(sensor_row, textvariable=self.sensor_type_var, state="readonly", width=6,
+                     values=("mono", "osc")).grid(row=0, column=0, sticky="w")
+        ttk.Label(sensor_row, text=" channel:").grid(row=0, column=1)
+        ttk.Combobox(sensor_row, textvariable=self.osc_channel_var, state="readonly", width=4,
+                     values=("R", "G", "B")).grid(row=0, column=2, sticky="w")
+        ttk.Label(f, text="osc: single Bayer channel (R/B 1/4, G 1/2 of the pixels). Use the"
+                          " channel's effective QE (sensor QE x CFA dye) as the QE curve.",
+                  foreground="gray35", wraplength=300, justify="left").grid(row=18, column=0, columnspan=2, sticky="w")
         self.gain_table_path_var = self._var("gain_table_path", "")
         self.gain_setting_var = tk.StringVar(value="")
         self.gain_table_rows = []
@@ -1793,7 +1805,8 @@ class ETCGUI(tk.Tk):
             observing_band = observing_profile.transmission
             atmo = self.earth_atmosphere_curve if self.earth_atmosphere_curve is not None else fcat.generic_zenith_atmosphere_curve()
             detector = Detector(float(self.pixel_var.get()), float(self.gain_var.get()), float(self.fullwell_var.get()),
-                                int(self.bitdepth_var.get()), float(self.readnoise_var.get()), float(self.dark_var.get()))
+                                int(self.bitdepth_var.get()), float(self.readnoise_var.get()), float(self.dark_var.get()),
+                                sensor_type=self.sensor_type_var.get(), osc_channel=self.osc_channel_var.get())
             telescope = {"diameter_mm": float(self.diam_var.get()), "obstruction_mm": float(self.obstruct_var.get()),
                          "efficiency": float(self.eff_var.get()), "focal_length_mm": float(self.focal_var.get()),
                          "throughput_curve": self.throughput_curve,
@@ -1828,19 +1841,18 @@ class ETCGUI(tk.Tk):
                 scint_fraction = (result["scintillation_noise_e"]
                                   / max(result["photons_source_es"] * exposure_used, 1e-300))
                 self._append_info_outputs([
-                    f"Photometry ({result['source_geometry']} source), exposure {exposure_used:.1f} s: "
-                    f"S/N = {result['snr']:.1f}.",
-                    f"Noise terms in the aperture ({result['n_pixels']:.0f} px): scintillation "
-                    f"{result['scintillation_noise_e']:.1f} e- ({100.0 * scint_fraction:.2f}% of source), "
-                    f"ADC quantization {result['digitization_noise_e']:.1f} e-, read noise "
-                    f"{detector.read_noise_e:g} e-/px.",
-                    f"Brightest pixel {result['peak_e_unclipped']:.0f} e- "
-                    f"({result['peak_adu_unclipped']:.0f} ADU), saturation {result['saturation_flag']}; "
-                    f"maximum unsaturated single frame {result['max_unsaturated_exptime_s']:.1f} s.",
-                    f"Predicted standard magnitude in {self.band_var.get()}: "
-                    f"{result['estimated_observing_magnitude']:.3f}; instrumental response magnitude: "
-                    f"{result['instrumental_response_magnitude']:.3f}.",
-                    f"Sky surface brightness used: {result['sky_mag_arcsec2']:.2f} mag/arcsec2."])
+                    f"mode / exposure   : photometry ({result['source_geometry']}) / {exposure_used:.1f} s",
+                    f"S/N               : {result['snr']:.1f}",
+                    f"aperture          : {result['n_pixels']:.0f} px",
+                    f"scintillation     : {result['scintillation_noise_e']:.1f} e-  "
+                    f"({100.0 * scint_fraction:.2f}% of source)",
+                    f"ADC quantization  : {result['digitization_noise_e']:.1f} e-",
+                    f"peak pixel        : {result['peak_e_unclipped']:.0f} e- / "
+                    f"{result['peak_adu_unclipped']:.0f} ADU  sat={result['saturation_flag']}  "
+                    f"max single frame {result['max_unsaturated_exptime_s']:.1f} s",
+                    f"magnitudes        : standard {result['estimated_observing_magnitude']:.3f}, "
+                    f"instrumental {result['instrumental_response_magnitude']:.3f} ({self.band_var.get()})",
+                    f"sky used          : {result['sky_mag_arcsec2']:.2f} mag/arcsec2"])
                 frame = pd.DataFrame([result]); self._display_table(frame, "mag"); self.result_df = frame
                 plot_args = ("photometry", track, values, label, idx, self.band_var.get())
                 snr_values = values if target_snr is None else np.where(np.isfinite(values), target_snr, np.nan)
@@ -1877,24 +1889,21 @@ class ETCGUI(tk.Tk):
                 self.differential_var.set(
                     f"σ(EW) at {reference_wl:.0f} Å: {float(ref_row['sigma_ew_mangstrom']):.1f} mÅ "
                     "(Cayrel) for the selected exposure.")
-                dispersion_line = (f"Slitless dispersion {spectrum.attrs['dispersion_aa_pix']:.2f} Å/pixel "
-                                   f"(grating efficiency {spectrum.attrs['grating_efficiency']:.2f})."
+                dispersion_line = (f"dispersion        : {spectrum.attrs['dispersion_aa_pix']:.2f} A/pix, "
+                                   f"grating efficiency {spectrum.attrs['grating_efficiency']:.2f}"
                                    if "dispersion_aa_pix" in spectrum.attrs else "")
                 self._append_info_outputs([
-                    f"Spectroscopy ({spectrum.attrs['spectroscopy_mode']}), median resolving power "
-                    f"R = {spectrum.attrs['effective_resolution_R']:.0f}.",
-                    f"At the reference wavelength {reference_wl:.0f} Å: S/N = {float(ref_row['snr']):.1f} "
-                    f"per resolution element; σ(EW) = {float(ref_row['sigma_ew_mangstrom']):.1f} mÅ "
-                    "(Cayrel 1988 line-detection criterion: a line is measurable when its expected "
-                    "EW exceeds ~3 σ(EW)).",
+                    f"mode              : spectroscopy ({spectrum.attrs['spectroscopy_mode']}), "
+                    f"median R = {spectrum.attrs['effective_resolution_R']:.0f}",
+                    f"at {reference_wl:.0f} A       : S/N {float(ref_row['snr']):.1f} /resel, "
+                    f"sigma(EW) {float(ref_row['sigma_ew_mangstrom']):.1f} mA (Cayrel)",
                     dispersion_line,
-                    f"Noise per resel ({spectrum.attrs['n_pixels_per_resel']:.0f} px): median scintillation "
-                    f"{spectrum.attrs['scintillation_noise_e_median']:.1f} e-, ADC quantization "
-                    f"{spectrum.attrs['digitization_noise_e']:.1f} e-, read noise {detector.read_noise_e:g} e-/px.",
-                    f"Saturation at reference: {ref_row['saturation_flag']}; maximum unsaturated single "
-                    f"frame {float(ref_row['max_unsaturated_exptime_s']):.1f} s.",
-                    f"Sky surface brightness used: {spectrum.attrs['sky_mag_arcsec2']:.2f} mag/arcsec2; "
-                    f"PSF model {spectrum.attrs['psf_model']}."])
+                    f"resel             : {spectrum.attrs['n_pixels_per_resel']:.0f} px; median scintillation "
+                    f"{spectrum.attrs['scintillation_noise_e_median']:.1f} e-, ADC "
+                    f"{spectrum.attrs['digitization_noise_e']:.1f} e-",
+                    f"saturation at ref : {ref_row['saturation_flag']}, max single frame "
+                    f"{float(ref_row['max_unsaturated_exptime_s']):.1f} s",
+                    f"sky used          : {spectrum.attrs['sky_mag_arcsec2']:.2f} mag/arcsec2"])
                 self._display_table(spectrum, "wavelength_aa"); self.result_df = spectrum
                 plot_args = ("spectroscopy", track, spectra, values, label, idx, slider_indices)
                 snr_values = values if target_snr is None else np.where(np.isfinite(values), target_snr, np.nan)
@@ -2004,61 +2013,54 @@ class ETCGUI(tk.Tk):
         self._ensure_results_window()
         local = track["local_datetime"][idx]
         parallactic = float(track["parallactic_deg"][idx])
-        sky_line = ("" if sky_mag_arcsec2 is None
-                    else f"Sky surface brightness at selected time: {sky_mag_arcsec2:.2f} mag/arcsec2 (observing band)\n")
-        text = f"""PHYSICAL ASSUMPTIONS
---------------------
-Target: {target_label}; ICRS RA {ra:.6f} deg, Dec {dec:.6f} deg
-Selected UTC: {utc:%Y-%m-%d %H:%M}; local display: {local:%Y-%m-%d %H:%M} ({self._local_timezone_label()})
-Altitude: {altitude:.2f} deg; airmass: {airmass:.3f} (Pickering 2002 on the
-refraction-corrected apparent altitude; not defined below 5 deg)
-Parallactic angle: {parallactic:+.2f} deg (N through E; slit at this angle avoids
-atmospheric-dispersion slit losses)
-{sky_line}Azimuth convention: N=0, E=90, S=180, W=270 deg
-
-Target reference magnitude: {self.mag_var.get()} {self.mag_system_var.get()} in {self.reference_band_var.get()}.
-Observing filter: {self.band_var.get()} (used in photometry and spectroscopy). The template file
-is a calibrated F_lambda distribution represented at visual mv0={self.selected_star.mv0:.3f};
-it is first converted to visual zero as in interpola_spad, then scaled to the
-target reference measurement. The observing response is applied afterwards.
-Sky model: {self.sky_model_var.get()}. ING mode combines the dark-sky table
-with van Rhijn airglow (solar-cycle scaled), zodiacal light at the field's
-ecliptic latitude, integrated starlight at its galactic latitude, the
-Krisciunas & Schaefer (1991) Moon model, twilight blending and the Weaver
-daylight table; fixed_ab uses the manually entered observed ground sky;
-sqm anchors the V sky to the entered zenith SQM reading
-({self.sqm_var.get()} mag/arcsec2) with the built-in band colours and the
-same Moon model on top.
-PSF model: {self.psf_model_var.get()} (Moffat beta {self.moffat_beta_var.get()} where selected).
-{f"Detector fields set from the CMOS gain table, setting {self.gain_setting_var.get()} (gain {self.gain_var.get()} e-/ADU, RN {self.readnoise_var.get()} e-, FWC {self.fullwell_var.get()} e-)." if self.gain_table_rows else "Detector fields entered manually (no CMOS gain table loaded)."}
-{("Slit-spectrograph geometry: " + self.spec_geometry_status_var.get()) if self.mode_var.get() == "spectroscopy" else ""}
-
-Detected counts include collecting area pi/4(D²-d²), scalar and optional
-wavelength-dependent optics throughput, QE, and the loaded Earth-atmosphere
-transmission curve (or the broad-band fallback) raised to the current airmass,
-source aperture or slit losses, sky, dark current and read noise, plus
-Young-law scintillation and ADC quantization (gain/sqrt(12)) noise terms.
-'fixed' slit orientation additionally applies the per-wavelength Filippenko
-(1982) atmospheric-dispersion slit loss. Sky is
-already an observed ground brightness and is therefore not extinguished a
-second time. Spectroscopic values are per resolution element. The native
-Matplotlib spectrum slider is manual and has no autoplay.
-
-SATURATION / TARGET-S/N POLICY
-------------------------------
-Peak-pixel electrons use the untruncated Gaussian PSF (and the spectral LSF
-for spectra), while S/N uses the selected photometric aperture or extraction.
-The saturation flag distinguishes detector full well from ADC clipping. CSV
-output reports the maximum unsaturated single-frame exposure at each time;
-split a longer required exposure into shorter frames and include one read-noise
-term for each frame when planning a stack.
-{('Slitless mode is EXPERIMENTAL: its dispersion/LSF geometry is internally consistent, but must be validated against a calibrated instrument.' if self.mode_var.get() == 'spectroscopy' and self.spectroscopy_mode_var.get() == 'slitless' else '')}
-"""
-        self.info_text.delete("1.0", tk.END); self.info_text.insert("1.0", text)
+        sky_source = {"ing": "ING dark table + van Rhijn airglow + zodiacal(|beta|) + starlight(|b|) "
+                             "+ K&S Moon + twilight/Weaver",
+                      "fixed_ab": f"fixed AB {self.sky_var.get()} mag/arcsec2 (observed)",
+                      "sqm": f"SQM {self.sqm_var.get()} V mag/arcsec2 zenith + band colours + K&S Moon",
+                      }.get(self.sky_model_var.get(), self.sky_model_var.get())
+        detector_source = (f"gain table setting {self.gain_setting_var.get()}" if self.gain_table_rows
+                           else "manual entry")
+        lines = [
+            "RUN PARAMETERS",
+            "--------------",
+            f"target            : {target_label}  ICRS {ra:.6f} {dec:+.6f} deg",
+            f"time              : {utc:%Y-%m-%d %H:%M} UTC  |  {local:%Y-%m-%d %H:%M} {self._local_timezone_label()}",
+            f"altitude/airmass  : {altitude:.2f} deg / {airmass:.3f}  (Pickering 2002, refracted; none below 5 deg)",
+            f"parallactic angle : {parallactic:+.2f} deg (N through E)",
+        ]
+        if sky_mag_arcsec2 is not None:
+            lines.append(f"sky brightness    : {sky_mag_arcsec2:.2f} mag/arcsec2 (observing band, selected time)")
+        lines += [
+            f"sky model         : {self.sky_model_var.get()} = {sky_source}",
+            f"reference mag     : {self.mag_var.get()} {self.mag_system_var.get()} in {self.reference_band_var.get()}",
+            f"observing filter  : {self.band_var.get()}",
+            f"template          : {self.selected_star.name.strip()}  mv0={self.selected_star.mv0:.3f}  "
+            f"(visual-zero convention, then rescaled to the reference magnitude)",
+            f"PSF               : {self.psf_model_var.get()}"
+            + (f" beta={self.moffat_beta_var.get()}" if self.psf_model_var.get() == "moffat" else ""),
+            f"detector          : {detector_source}; gain {self.gain_var.get()} e-/ADU, "
+            f"RN {self.readnoise_var.get()} e-, FWC {self.fullwell_var.get()} e-, "
+            f"{self.sensor_type_var.get()}"
+            + (f" channel {self.osc_channel_var.get()}" if self.sensor_type_var.get() == "osc" else ""),
+            "noise terms       : photon, sky, dark, read, scintillation (Young), ADC quantization (g/sqrt(12))",
+            "extinction        : zenith curve ^ airmass on source; sky used as observed (not re-extinguished)",
+            "saturation        : peak pixel from unextracted PSF/LSF; flags FULL_WELL / ADC / BOTH",
+        ]
+        if self.mode_var.get() == "spectroscopy":
+            lines += [
+                f"slit orientation  : {self.slit_orientation_var.get()}"
+                + ("" if self.slit_orientation_var.get() == "parallactic"
+                   else " (per-wavelength Filippenko dispersion offset applied)"),
+                f"spectrograph      : {self.spec_geometry_status_var.get()}",
+            ]
+            if self.spectroscopy_mode_var.get() == "slitless":
+                lines.append("slitless          : EXPERIMENTAL, pending validation on a calibrated instrument")
+        self.info_text.delete("1.0", tk.END)
+        self.info_text.insert("1.0", "\n".join(lines) + "\n")
 
     def _append_info_outputs(self, lines):
-        """Append the selected-time output summary to the assumptions tab."""
-        block = ["", "SELECTED-TIME OUTPUTS", "---------------------"]
+        """Append the selected-time output block to the parameters tab."""
+        block = ["", "RUN OUTPUTS", "-----------"]
         block += [line for line in lines if line]
         for extra in (self.stack_plan_var.get(), self.differential_var.get()):
             if extra and not extra.startswith("Stack plan appears"):

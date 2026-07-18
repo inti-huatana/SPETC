@@ -8,9 +8,14 @@
     relative to \code{data/} (subdirectories allowed, e.g.\
     \code{bpgs/bpgs\_92.ascii}). \code{Vmag} is the CALSPEC visual
     magnitude represented by the file ($m_{v0}$).
-  \item[template spectra] Two-column ASCII: wavelength [\AA{}], calibrated
-    $\flam$. Non-finite and non-positive rows are dropped; wavelengths are
-    sorted and deduplicated on load.
+  \item[template spectra] Two-column ASCII (wavelength [\AA{}], $\flam$)
+    or CALSPEC/STScI-style FITS binary tables
+    (\code{WAVELENGTH}/\code{FLUX} and common variants; \code{TUNIT} in
+    Angstrom, nm or micron; extra columns ignored), dispatched by
+    extension. Non-finite and non-positive rows are dropped; wavelengths
+    are sorted and deduplicated on load. \code{add\_template.py} imports
+    files or directories, computing the synthetic $m_{v0}$/$B-V$ and
+    appending the catalogue rows.
   \item[\code{qe.dat}] Two-column wavelength/QE; the wavelength unit is
     declared in the configuration (\code{Angstrom}/\code{nm}/\code{um}).
   \item[\code{filters.list}] One entry per line naming SVO profiles;

@@ -43,6 +43,25 @@ def scintillation_variance_e2(source_e, diameter_mm, airmass, elevation_m, t_exp
     return (np.asarray(source_e, dtype=np.float64) * fraction) ** 2
 
 
+def scintillation_variance_rate_e2_s(source_rate_e_s, diameter_mm, airmass, elevation_m,
+                                     coefficient=0.09):
+    """Scintillation variance accumulation rate [e-^2 per second].
+
+    With sigma/I = C (2t)^{-1/2} the variance of S_rate * t electrons is
+    (S_rate C)^2 t / 2 - *linear* in time, exactly like a Poisson term, so
+    closed-form exposure solvers can absorb it into the total rate.  It is
+    also independent of how the time is split into frames (scintillation
+    averages down with total time).
+    """
+    diameter_cm = (float(diameter_mm) * u.mm).to_value(u.cm)
+    if diameter_cm <= 0:
+        raise ValueError("Aperture diameter must be positive.")
+    x = max(float(airmass), 1.0)
+    c_factor = (float(coefficient) * diameter_cm ** (-2.0 / 3.0) * x ** 1.75
+                * np.exp(-float(elevation_m) / SCINTILLATION_SCALE_HEIGHT_M))
+    return (float(source_rate_e_s) * c_factor) ** 2 / 2.0
+
+
 def digitization_noise_e(gain_e_adu):
     """Quantization noise of the ADC in electrons rms per pixel: g/sqrt(12)."""
     gain = float(gain_e_adu)

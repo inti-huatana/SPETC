@@ -305,6 +305,39 @@ def test_sigma_ew_column_present_and_scales_inversely_with_snr():
     assert float(long["sigma_ew_mangstrom"].median()) < float(short["sigma_ew_mangstrom"].median())
 
 
+def test_target_snr_solver_includes_scintillation():
+    """The solved exposure must reproduce the requested S/N even when
+    scintillation dominates (bright star): its variance is linear in t and
+    enters the closed form as an extra rate."""
+    from photometry import PhotometryETC
+    from observing_conditions import scintillation_variance_rate_e2_s
+    from solvers import exposure_time_for_snr
+    wavelength = np.linspace(4000.0, 7000.0, 300)
+    template = np.column_stack((wavelength, np.full_like(wavelength, 3.6e-9)))
+    band = np.column_stack((wavelength, ((wavelength >= 5000) & (wavelength <= 6000)).astype(float)))
+    qe = np.column_stack((wavelength, np.full_like(wavelength, 0.9)))
+    telescope = {"diameter_mm": 358.0, "obstruction_mm": 87.5, "efficiency": 0.7, "focal_length_mm": 2000.0}
+    detector = Detector(4.63, 1.0, 1e9, 32, read_noise_e=1.5)
+    atmosphere = {"airmass": 1.3, "seeing_arcsec": 2.5, "elevation_m": 1366.0, "transmission_curve": None}
+    sky = {"sky_mag": 20.5, "sky_zero_point_jy": 3631.0, "sky_at_telescope": True,
+           "aperture_radius_arcsec": 4.0}
+    etc = PhotometryETC(telescope, detector, atmosphere, sky)
+    probe = etc.compute_photometry_single(template, band, qe, 6.0, 1.0)
+    scint_rate = scintillation_variance_rate_e2_s(probe["source_rate_per_s"], 358.0, 1.3, 1366.0)
+    target = 500.0
+    t_exp = exposure_time_for_snr(target, probe["source_rate_per_s"], probe["sky_rate_per_s"],
+                                  detector.dark_current_e_s_pix * probe["n_pixels"],
+                                  detector.read_noise_e, probe["n_pixels"],
+                                  extra_variance_rate_e2_s=scint_rate)
+    achieved = etc.compute_photometry_single(template, band, qe, 6.0, t_exp)["snr"]
+    assert abs(achieved / target - 1.0) < 0.02, (t_exp, achieved)
+    # Without the scintillation term the solver would badly undershoot.
+    naive = exposure_time_for_snr(target, probe["source_rate_per_s"], probe["sky_rate_per_s"],
+                                  detector.dark_current_e_s_pix * probe["n_pixels"],
+                                  detector.read_noise_e, probe["n_pixels"])
+    assert t_exp > 2.0 * naive
+
+
 def test_filter_profile_builder_matches_svo_scale():
     """Synthetic Vega zero point of the shipped Bessell.V profile must land
     within ~1% of the SVO-declared value."""
@@ -325,6 +358,7 @@ if __name__ == "__main__":
     test_gain_table_loader()
     test_stack_planner_closed_form()
     test_sigma_ew_column_present_and_scales_inversely_with_snr()
+    test_target_snr_solver_includes_scintillation()
     test_filter_profile_builder_matches_svo_scale()
     test_spectroscopic_observing_filter_applies_to_source_and_sky()
     test_fits_atmosphere_wavelength_unit_is_honoured()

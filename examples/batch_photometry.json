@@ -1,0 +1,18 @@
+{
+  "name": "vega_photometry_demo",
+  "mode": "photometry",
+  "data_directory": "data",
+  "telescope": {"diameter_mm": 358.0, "obstruction_mm": 87.5, "efficiency": 0.70, "focal_length_mm": 2000.0},
+  "detector": {"pixel_size_um": 4.63, "gain_e_adu": 1.0, "full_well_e": 51000, "bit_depth": 14,
+               "read_noise_e": 1.5, "dark_current_e_s_pix": 0.02},
+  "atmosphere": {"airmass": 1.3, "seeing_arcsec": 2.5, "psf_model": "moffat", "moffat_beta": 2.5,
+                 "elevation_m": 1366.0},
+  "sky": {"mode": "sqm", "sqm_v_mag_arcsec2": 20.5},
+  "target": {"template": "Vega", "magnitude": 9.0, "magnitude_system": "Vega",
+             "reference_filter": "Bessell.V"},
+  "observing_filter": "Bessell.V",
+  "photometry": {"aperture_radius_arcsec": 4.0, "source_geometry": "point"},
+  "exposure_time_s": 60.0,
+  "target_snr": 500.0,
+  "stack_sub_exposure_s": 0
+}

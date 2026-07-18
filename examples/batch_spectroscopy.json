@@ -1,0 +1,21 @@
+{
+  "name": "sa100_spectroscopy_demo",
+  "mode": "spectroscopy",
+  "data_directory": "data",
+  "telescope": {"diameter_mm": 200.0, "obstruction_mm": 70.0, "efficiency": 0.85, "focal_length_mm": 1000.0},
+  "detector": {"pixel_size_um": 4.63, "gain_e_adu": 1.0, "full_well_e": 51000, "bit_depth": 14,
+               "read_noise_e": 1.5, "dark_current_e_s_pix": 0.05},
+  "atmosphere": {"airmass": 1.3, "seeing_arcsec": 2.5, "psf_model": "moffat", "moffat_beta": 2.5,
+                 "elevation_m": 300.0},
+  "sky": {"mode": "sqm", "sqm_v_mag_arcsec2": 19.8},
+  "target": {"template": "Vega", "magnitude": 7.0, "magnitude_system": "Vega",
+             "reference_filter": "Bessell.V"},
+  "observing_filter": "BLANK",
+  "spectroscopy": {"mode": "slitless", "wavelength_min_aa": 4000, "wavelength_max_aa": 7500,
+                   "reference_wavelength_aa": 5500,
+                   "slitless_extraction_width_arcsec": 5.0,
+                   "grating_lines_mm": 100, "grating_distance_mm": 42.0,
+                   "grating_efficiency": 0.5, "slitless_intrinsic_fwhm_pix": 1.0},
+  "exposure_time_s": 120.0,
+  "target_snr": 200.0
+}

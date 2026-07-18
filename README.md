@@ -134,10 +134,25 @@ automatically restored with that profile.
   reference wavelength.
 * **`make_filter_profile.py`**: converts any two-column filter transmission
   (Astrodon/Astronomik/Baader RGB, narrowband, digitized curves; 0–1 or
-  percent) into calibrated `_Vega`/`_AB` XML profiles. The Vega zero point
-  is computed synthetically from the bundled CALSPEC Vega spectrum — the
-  same convention SVO uses (verified to ~1% against the shipped SVO
-  profiles).
+  percent) into **full SVO-format VOTables** (`_Vega`/`_AB`), with the
+  complete photdm utype/UCD annotation and every characterising quantity
+  measured from the curve using the SVO definitions: WavelengthRef/Mean/
+  Eff/Min/Max/Cen/Pivot/Peak/Phot, WidthEff, FWHM and Fsun (from the
+  bundled CALSPEC solar spectrum). The Vega zero point is computed
+  synthetically from the bundled CALSPEC Vega spectrum — the same
+  convention SVO uses. Validated against the shipped 2MASS.H profile:
+  pivot exact, Fsun −0.5%, Vega zero point +0.6%.
+* **`spetc_batch.py`**: headless mode — `python3 spetc_batch.py
+  examples/batch_photometry.json out/` runs the same engines without the
+  GUI from a JSON run description and writes the result CSV plus a
+  self-contained one-page HTML summary (configuration, sky, key numbers,
+  stack plan, embedded S/N figure). Batch sky modes are `fixed_ab` and
+  `sqm` (Moon/twilight terms need the GUI's time machinery and are not
+  applied). Two example configurations ship in `examples/`.
+* The target-S/N solver and the stack planner include the **scintillation
+  variance** in closed form (it is linear in time, so it enters as an
+  extra Poisson-like rate): solved exposures reproduce the requested S/N
+  even for bright, scintillation-limited stars.
 
 ## Physical conventions
 

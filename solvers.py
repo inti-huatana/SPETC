@@ -56,6 +56,51 @@ def exposure_time_for_snr(target_snr, source_rate_e_s, sky_rate_e_s,
     return (s2 * q_rate + np.sqrt((s2 * q_rate)**2 + 4 * source_rate_e_s**2 * s2 * read_variance)) / (2 * source_rate_e_s**2)
 
 
+def plan_stack(target_snr, source_rate_e_s, sky_rate_e_s, dark_rate_e_s,
+               read_noise_e, n_pixels, max_unsaturated_exptime_s,
+               user_sub_exposure_s=0.0):
+    """Plan a stack of sub-exposures reaching a target *total* S/N.
+
+    The stacked CCD equation for N frames of length t (T = N t) is
+    ``SNR = S T / sqrt(Q T + N Npix RN^2)`` with Q the total Poisson rate,
+    which is closed-form in T for a fixed t:
+    ``T = SNR^2 (Q + Npix RN^2 / t) / S^2``.
+
+    The sub-exposure is the shortest of: the user's preference (0 = none),
+    the saturation limit of the brightest pixel, and it is compared with the
+    sky-limited exposure (background variance per pixel = 10 RN^2), below
+    which read noise starts to matter.  The read-noise penalty is the extra
+    total time relative to one ideal unsaturated exposure of length T.
+    """
+    target_snr = float(target_snr)
+    source = float(source_rate_e_s)
+    q_rate = source + float(sky_rate_e_s) + float(dark_rate_e_s)
+    read_var = float(n_pixels) * float(read_noise_e) ** 2
+    if target_snr <= 0 or source <= 0:
+        return None
+    sky_limited_sub_s = (10.0 * read_var / (float(sky_rate_e_s) + float(dark_rate_e_s))
+                         if (sky_rate_e_s + dark_rate_e_s) > 0 else np.inf)
+    limits = {"saturation": float(max_unsaturated_exptime_s)}
+    if user_sub_exposure_s and user_sub_exposure_s > 0:
+        limits["user"] = float(user_sub_exposure_s)
+    sub_exposure_s = min(limits.values())
+    limited_by = min(limits, key=limits.get)
+    if not np.isfinite(sub_exposure_s) or sub_exposure_s <= 0:
+        return None
+    total_time_s = target_snr**2 * (q_rate + read_var / sub_exposure_s) / source**2
+    n_frames = max(int(np.ceil(total_time_s / sub_exposure_s)), 1)
+    stacked_time_s = n_frames * sub_exposure_s
+    achieved_snr = (source * stacked_time_s
+                    / np.sqrt(q_rate * stacked_time_s + n_frames * read_var))
+    ideal_time_s = exposure_time_for_snr(target_snr, source, sky_rate_e_s,
+                                         dark_rate_e_s, read_noise_e, n_pixels)
+    penalty_percent = 100.0 * (total_time_s / ideal_time_s - 1.0) if ideal_time_s > 0 else np.nan
+    return {"sub_exposure_s": sub_exposure_s, "n_frames": n_frames,
+            "total_time_s": stacked_time_s, "achieved_snr": float(achieved_snr),
+            "read_noise_penalty_percent": float(penalty_percent),
+            "sky_limited_sub_s": float(sky_limited_sub_s), "limited_by": limited_by}
+
+
 def reverse_texp_for_snr(
     target_snr,
     source_phot_per_s,

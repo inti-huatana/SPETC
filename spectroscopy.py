@@ -42,6 +42,48 @@ def grating_dispersion_aa_per_pixel(lines_per_mm, grating_to_sensor_mm, pixel_si
     return 1.0e4 * float(pixel_size_um) / (distance * lines * order)
 
 
+def slit_spectrograph_resolving_power(wavelength_aa, grating_lines_mm, collimator_fl_mm,
+                                      camera_fl_mm, telescope_fl_mm, slit_width_arcsec,
+                                      seeing_arcsec, diffraction_order=1):
+    """Resolving power of a classical slit spectrograph (Littrow approximation).
+
+    The grating equation in Littrow configuration gives
+    sin(beta) = m n lambda / 2 and a reciprocal linear dispersion
+    dlambda/dx = cos(beta) 1e7 / (m n f_cam) [A/mm].  The resolution element
+    on the detector is the narrower of the geometric slit image and the
+    seeing image, both reimaged by f_cam/f_coll (anamorphism = 1 in
+    Littrow).  Amateurs know these numbers from their hardware; the returned
+    R feeds the ETC's resolving-power field, which can still be edited.
+    """
+    lines = float(grating_lines_mm)
+    coll = float(collimator_fl_mm)
+    cam = float(camera_fl_mm)
+    tel = float(telescope_fl_mm)
+    slit = float(slit_width_arcsec)
+    seeing = float(seeing_arcsec)
+    order = int(diffraction_order)
+    lam = float(wavelength_aa)
+    if min(lines, coll, cam, tel, slit, seeing, lam) <= 0 or order < 1:
+        raise ValueError("All spectrograph geometry values must be positive.")
+    sin_beta = order * lines * (lam * 1.0e-7) / 2.0
+    if sin_beta >= 1.0:
+        raise ValueError(
+            f"{lam:.0f} Å is not diffracted by {lines:.0f} lines/mm in order {order} "
+            "(grating equation exceeds 90 deg).")
+    cos_beta = np.sqrt(1.0 - sin_beta**2)
+    dispersion_aa_mm = cos_beta * 1.0e7 / (order * lines * cam)
+    slit_focal_mm = slit / 206265.0 * tel
+    seeing_focal_mm = seeing / 206265.0 * tel
+    limited_by = "slit" if slit_focal_mm <= seeing_focal_mm else "seeing"
+    width_detector_mm = min(slit_focal_mm, seeing_focal_mm) * cam / coll
+    dlam = width_detector_mm * dispersion_aa_mm
+    if dlam <= 0:
+        raise ValueError("Computed resolution element is not positive.")
+    return {"resolving_power": lam / dlam, "resolution_element_aa": dlam,
+            "dispersion_aa_mm": dispersion_aa_mm, "limited_by": limited_by,
+            "blaze_angle_deg": float(np.degrees(np.arcsin(sin_beta)))}
+
+
 class SpectroscopyETC:
     def __init__(self, telescope, detector, atmosphere, sky_model):
         self.telescope = telescope
@@ -232,6 +274,12 @@ class SpectroscopyETC:
         snrs = source_e / np.sqrt(np.maximum(
             source_e + sky_e + dark_e + n_pixels * self.detector.read_noise_e**2
             + scintillation_var + digitization_var, 1e-300))
+        # Cayrel (1988) equivalent-width uncertainty: sigma(EW) =
+        # 1.5 sqrt(FWHM dx) / (S/N per pixel), with the resolution element as
+        # the line FWHM and dx the dispersion-pixel width.  Reported in mA.
+        snr_per_pixel = snrs / np.sqrt(max(dispersion_pixels_per_resel, 1.0))
+        pixel_aa = dlam.to_value(u.AA) / max(dispersion_pixels_per_resel, 1e-12)
+        sigma_ew_mangstrom = 1000.0 * 1.5 * np.sqrt(dlam.to_value(u.AA) * pixel_aa) / np.maximum(snr_per_pixel, 1e-12)
         # Brightest pixel: separable product of the (Gaussian) instrumental
         # LSF along dispersion and the selected PSF model across it.
         sigma_disp_pix = dispersion_pixels_per_resel / 2.354820045
@@ -249,7 +297,8 @@ class SpectroscopyETC:
         result = pd.DataFrame({"wavelength_aa": wave.value, "resolution_element_aa": dlam.value,
                              "effective_resolution_R": effective_resolution,
                              "photons_source_es": source_rates, "photons_sky_es": sky_rates,
-                             "snr": snrs, "adu": adu, "saturated": saturated.astype(int),
+                             "snr": snrs, "sigma_ew_mangstrom": sigma_ew_mangstrom,
+                             "adu": adu, "saturated": saturated.astype(int),
                              "peak_e_unclipped": peak_e, "peak_adu_unclipped": peak_adu_unclipped,
                              "full_well_fraction": peak_e / self.detector.full_well_e,
                              "saturation_flag": self.detector.saturation_flag(peak_e),

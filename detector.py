@@ -35,6 +35,41 @@ def load_qe_curve(path, wavelength_unit="Angstrom"):
     return curve.data
 
 
+def load_gain_table(path):
+    """Read a CMOS gain table: gain_setting, e-/ADU, read noise [e-], full well [e-].
+
+    Amateur CMOS cameras change conversion gain, read noise and full well
+    together with the gain setting; manufacturers publish these curves.  The
+    file holds one whitespace- or comma-separated row per setting, ``#``
+    comments allowed.  Returns rows sorted by gain setting.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Gain table not found: {path}")
+    rows = []
+    import re
+    with path.open("r", encoding="utf-8") as stream:
+        for line in stream:
+            line = line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            tokens = re.split(r"[\s,;]+", line)
+            if len(tokens) < 4:
+                continue
+            try:
+                setting, e_adu, rn, fwc = (float(tokens[0]), float(tokens[1]),
+                                           float(tokens[2]), float(tokens[3]))
+            except ValueError:
+                continue
+            if e_adu <= 0 or rn < 0 or fwc <= 0:
+                raise ValueError(f"Gain table row with non-physical values in {path}: {line!r}")
+            rows.append({"gain_setting": setting, "gain_e_adu": e_adu,
+                         "read_noise_e": rn, "full_well_e": fwc})
+    if not rows:
+        raise ValueError(f"No usable gain-table rows (setting, e-/ADU, RN, FWC) found in {path}")
+    return sorted(rows, key=lambda row: row["gain_setting"])
+
+
 def load_transmission_curve(path, wavelength_unit="Angstrom"):
     """Load a two-column wavelength/transmission curve in an explicit unit."""
     curve = load_two_column_curve(path, wavelength_unit_name=wavelength_unit, name="transmission curve")

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ASPECT synthetic unfiltered response.
+  It is deliberately finite (3000 to 26000 Angstrom) so that photon and
+  magnitude integrals are defined. Transmission is one everywhere in that
+  interval. The only physically unambiguous magnitude calibration for this
+  artificial passband is AB (3631 Jy).
+-->
+<VOTABLE version="1.3" xmlns="http://www.ivoa.net/xml/VOTable/v1.3">
+  <RESOURCE type="results">
+    <TABLE>
+      <PARAM name="WavelengthUnit" value="Angstrom" datatype="char" arraysize="*"/>
+      <PARAM name="PhotSystem" value="ASPECT unfiltered" datatype="char" arraysize="*"/>
+      <PARAM name="DetectorType" value="1" datatype="int"/>
+      <PARAM name="WavelengthRef" value="12430" unit="Angstrom" datatype="double"/>
+      <PARAM name="WavelengthPivot" value="12430" unit="Angstrom" datatype="double"/>
+      <PARAM name="WidthEff" value="23000" unit="Angstrom" datatype="double"/>
+      <PARAM name="FWHM" value="23000" unit="Angstrom" datatype="double"/>
+      <PARAM name="MagSys" value="AB" datatype="char" arraysize="*"/>
+      <PARAM name="ZeroPoint" value="3631.0" unit="Jy" datatype="double"/>
+      <PARAM name="ZeroPointUnit" value="Jy" datatype="char" arraysize="*"/>
+      <FIELD name="Wavelength" unit="Angstrom" datatype="double"/>
+      <FIELD name="Transmission" datatype="double"/>
+      <DATA>
+        <TABLEDATA>
+          <TR><TD>3000.0</TD><TD>1.0</TD></TR>
+          <TR><TD>26000.0</TD><TD>1.0</TD></TR>
+        </TABLEDATA>
+      </DATA>
+    </TABLE>
+  </RESOURCE>
+</VOTABLE>

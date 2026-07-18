@@ -1,0 +1,9 @@
+[
+  {"name": "Asiago", "lon": 11.5696, "lat": 45.8486, "elev": 1366, "mag_sky": 21.20},
+  {"name": "Paranal", "lon": -70.4045, "lat": -24.6255, "elev": 2635, "mag_sky": 21.70},
+  {"name": "La Silla", "lon": -70.7345, "lat": -29.2575, "elev": 2347, "mag_sky": 21.20},
+  {"name": "Mauna Kea", "lon": -155.4731, "lat": 19.8207, "elev": 4207, "mag_sky": 21.80},
+  {"name": "Kitt Peak", "lon": -111.5993, "lat": 31.9599, "elev": 2095, "mag_sky": 21.50},
+  {"name": "Sutherland", "lon": 20.8102, "lat": -32.3826, "elev": 1798, "mag_sky": 21.10},
+  {"name": "Roque de los Muchachos", "lon": -17.8774, "lat": 28.7635, "elev": 2396, "mag_sky": 21.55}
+]

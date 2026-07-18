@@ -1,0 +1,34 @@
+nrow ,Vmag   ,B-V     ,name       ,spt   ,filename
+ 8839,  0.026,   0.000, Vega      ,   A0V, bpgs/alpha_lyr_stis_004.ascii
+ 1467,-26.750,   0.630, Sun       ,   G2V, bpgs/sun_reference_stis_001.ascii
+ 2233,  7.650,   0.590, HD 209458 ,   G0V, bpgs/hd209458_stisnic_002.ascii
+ 3958, 12.000,   0.620, P041c     ,   G2V, bpgs/p041c_stisnic_002.ascii
+ 4070, 13.000,   0.640, P330e     ,   G2V, bpgs/p330e_stisnic_002.ascii
+ 4049, 13.470,   0.660, P177d     ,   G2V, bpgs/p177d_stisnic_002.ascii
+ 1156,0.0,   0.470, BD+63 13  ,  F5IV, bpgs/bpgs_92.ascii
+ 1156,0.0,   0.770, HD 128428 ,  G3IV, bpgs/bpgs_98.ascii
+ 1156,0.0,   0.861, HD 56176  ,  G7IV, bpgs/bpgs_104.ascii
+ 1156,0.0,   1.050, HD 7010   ,  K0IV, bpgs/bpgs_117.ascii
+ 1156,0.0,   0.390, HD 191177 ,   F4V, bpgs/bpgs_31.ascii
+ 1156,0.0,   0.580, HD 154417 ,   F8V, bpgs/bpgs_42.ascii
+ 1156,0.0,   0.520, BD+26 3780,   G0V, bpgs/bpgs_36.ascii
+ 1156,0.0,   0.700, HD 227547 ,   G5V, bpgs/bpgs_44.ascii
+ 1156,0.0,   0.740, HD 136274 ,   G8V, bpgs/bpgs_49.ascii
+ 1156,0.0,   0.670, HD 139777 ,   K0V, bpgs/bpgs_48.ascii
+ 1156,0.0,   0.930, HD 190470 ,   K3V, bpgs/bpgs_56.ascii
+ 1156,0.0,   1.040, HD 154712 ,   K4V, bpgs/bpgs_57.ascii
+ 1156,0.0,   1.360, HD 157881 ,   K7V, bpgs/bpgs_64.ascii
+ 1156,0.0,   1.280, GL 40     ,   M0V, bpgs/bpgs_61.ascii
+ 1156,0.0,   1.500, GL 49     ,   M2V, bpgs/bpgs_67.ascii
+ 1156,0.0,   1.870, GL 65     ,   M5V, bpgs/bpgs_71.ascii
+ 1156,0.0,   0.002, 9 SGR     ,   O5V, bpgs/bpgs_1.ascii
+ 1156,0.0,  -0.183, BD-01 935 ,   B1V, bpgs/bpgs_4.ascii
+ 1156,0.0,  -0.008, HR 7174   ,   B6V, bpgs/bpgs_11.ascii
+ 1156,0.0,   0.076, 58 Aql    ,   A0V, bpgs/bpgs_20.ascii
+ 1156,0.0,   0.280, HD 190192 ,   A5V, bpgs/bpgs_28.ascii
+ 1156,0.0,   1.000, HD 136366 , K0III, bpgs/bpgs_111.ascii
+ 1156,0.0,   1.110, HD 72184  , K2III, bpgs/bpgs_124.ascii
+ 1156,0.0,   1.110, HD 62721  , K5III, bpgs/bpgs_150.ascii
+ 1156,0.0,   1.507, HD 116870 , M0III, bpgs/bpgs_151.ascii
+ 1156,0.0,   1.600, HD 104216 , M2III, bpgs/bpgs_156.ascii
+ 1156,0.0,   1.540, BD-02 3886, M5III, bpgs/bpgs_165.ascii

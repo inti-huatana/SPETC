@@ -104,6 +104,41 @@ telescope/instrument. It multiplies the scalar optics throughput and QE, is
 saved alongside an instrument profile as `<profile>_throughput.dat`, and is
 automatically restored with that profile.
 
+## Amateur-oriented features (v10.1)
+
+* **Coverage policy**: observing-side curves (template, QE) are zero-filled
+  outside their coverage; the **calibration bands stay strict** — a template
+  must cover at least 99% of the response-weighted reference and visual
+  bands, because a truncated calibration integral silently rescales the
+  whole spectrum. Atmospheric transmission curves are **edge-extended**
+  outside their tabulated range (an atmosphere is never opaque there).
+* **Slit-spectrograph geometry helper**: grating lines/mm, collimator and
+  camera focal lengths (plus the telescope FL, slit width, seeing and the
+  S/N reference wavelength already entered) compute R via the Littrow
+  grating equation and fill the R field, which remains editable.
+* **CMOS gain table**: a per-camera file (gain setting, e-/ADU, read noise,
+  full well; `#` comments) loads into a gain-setting selector that fills
+  the three detector fields, matching how CMOS cameras actually behave.
+* **SQM / Bortle sky mode**: enter your zenith SQM reading (V mag/arcsec²),
+  or pick a Bortle class to fill a typical value; band colours and the
+  Krisciunas & Schaefer Moon model are applied on top.
+* **Stack planner**: with a target S/N, the ETC reports N × sub-exposure
+  (sub capped by saturation or your preference), total time, the
+  read-noise penalty versus one ideal exposure, and the frame length above
+  which the background dominates read noise.
+* **Differential photometry**: an optional comparison-star magnitude turns
+  the result into an error budget in mmag per frame (both stars' full
+  noise, scintillation treated as uncorrelated).
+* **σ(EW)**: every spectroscopic result includes the Cayrel (1988)
+  equivalent-width uncertainty per wavelength (mÅ), reported at the S/N
+  reference wavelength.
+* **`make_filter_profile.py`**: converts any two-column filter transmission
+  (Astrodon/Astronomik/Baader RGB, narrowband, digitized curves; 0–1 or
+  percent) into calibrated `_Vega`/`_AB` XML profiles. The Vega zero point
+  is computed synthetically from the bundled CALSPEC Vega spectrum — the
+  same convention SVO uses (verified to ~1% against the shipped SVO
+  profiles).
+
 ## Physical conventions
 
 * Internally, wavelengths are Angstrom and all radiometric calculations use

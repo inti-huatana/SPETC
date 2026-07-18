@@ -10,7 +10,8 @@ import math
 import numpy as np
 import astropy.units as u
 from astropy.constants import c, h
-from spectral_utils import as_curve, require_coverage, interpolate_checked, interpolate_zero_filled
+from spectral_utils import (as_curve, require_coverage, interpolate_checked, interpolate_zero_filled,
+                            interpolate_edge_extended)
 
 
 FLAM_UNIT = u.erg / (u.s * u.cm**2 * u.AA)
@@ -82,6 +83,52 @@ def synthetic_magnitude(template, magnitude_band, zero_point_jy=3631.0, detector
     return float(-2.5 * np.log10((measured / reference).to_value(u.dimensionless_unscaled)))
 
 
+def covered_response_fraction(template_wave_aa, band_wave_aa, band_response, detector_type=1):
+    """Response-weighted fraction of a bandpass covered by a template's grid.
+
+    The weighting matches the synthetic-magnitude integrand (photon or
+    energy), so the returned fraction is exactly the share of the calibration
+    integral that the template can actually supply.
+    """
+    band = np.clip(np.asarray(band_response, dtype=float), 0.0, 1.0)
+    valid = band > 0.0
+    if not np.any(valid):
+        raise ValueError("The magnitude bandpass has zero transmission.")
+    band_wave = np.asarray(band_wave_aa, dtype=float)
+    grid = np.linspace(band_wave[valid].min(), band_wave[valid].max(), 2048)
+    response = np.interp(grid, band_wave, band, left=0.0, right=0.0)
+    weighting = grid if int(detector_type) == 1 else np.ones(grid.size)
+    integrand = response * weighting
+    integrate = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+    total = integrate(integrand, grid)
+    template_wave = np.asarray(template_wave_aa, dtype=float)
+    covered = (grid >= template_wave.min()) & (grid <= template_wave.max())
+    if not np.any(covered):
+        return 0.0
+    return float(integrate(np.where(covered, integrand, 0.0), grid) / total)
+
+
+CALIBRATION_COVERAGE_MINIMUM = 0.99
+
+
+def _require_calibration_coverage(template_wave, band_wave, band_response, detector_type, name):
+    """Calibration bands must be essentially fully covered by the template.
+
+    Zero-filling is acceptable on the observing side, where truncation only
+    loses counts; in the calibration integral it silently rescales the whole
+    spectrum (a truncated synthetic magnitude comes out too faint and the
+    template is scaled up to compensate), so it stays a hard requirement.
+    """
+    fraction = covered_response_fraction(template_wave.to_value(u.AA), band_wave.to_value(u.AA),
+                                         band_response, detector_type)
+    if fraction < CALIBRATION_COVERAGE_MINIMUM:
+        raise ValueError(
+            f"The template covers only {100.0 * fraction:.0f}% of the {name} response "
+            f"({template_wave.min().value:.0f}-{template_wave.max().value:.0f} Å). A partially "
+            "covered calibration band silently biases the flux scaling; select a reference "
+            "filter inside the template coverage or a template with wider coverage.")
+
+
 def calibrated_template_magnitude(template, target_magnitude, reference_band,
                                   reference_zero_point_jy=3631.0,
                                   template_mv0=0.0,
@@ -113,6 +160,10 @@ def calibrated_template_magnitude(template, target_magnitude, reference_band,
             reference_colour = -2.5 * np.log10(float(visual_zero_point_jy) /
                                                  float(reference_zero_point_jy))
         else:
+            _require_calibration_coverage(wave, ref_wave, ref_response,
+                                          reference_detector_type, "reference magnitude filter")
+            _require_calibration_coverage(wave, vis_wave, vis_response,
+                                          visual_detector_type, "visual calibration filter")
             ref_mag = synthetic_magnitude(np.column_stack((wave.value, visual_zero_template)),
                                           reference_band, reference_zero_point_jy, reference_detector_type)
             visual_mag = synthetic_magnitude(np.column_stack((wave.value, visual_zero_template)),
@@ -153,7 +204,10 @@ def atmospheric_transmission(wavelength, atmosphere):
     curve = atmosphere.get("transmission_curve")
     if curve is None:
         return np.ones(wavelength.size)
-    zenith = interpolate_zero_filled(wavelength.to_value(u.AA), curve, "atmospheric transmission curve", clip=(0.0, 1.0))
+    # Outside the curve's tabulated range the atmosphere is certainly not
+    # opaque: extend the edge values rather than zero-filling.
+    zenith = interpolate_edge_extended(wavelength.to_value(u.AA), curve,
+                                       "atmospheric transmission curve", clip=(0.0, 1.0))
     return np.clip(zenith, 0.0, 1.0) ** airmass
 
 

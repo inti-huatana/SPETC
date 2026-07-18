@@ -39,22 +39,49 @@ def test_svo_energy_and_photon_semantics_differ_for_coloured_sed():
     assert abs(energy_mag - photon_mag) > 0.01
 
 
-def test_spectroscopy_rejects_template_outside_requested_range():
+def test_spectroscopy_zero_fills_template_outside_coverage():
+    """v10.1 contract: observing-side truncation zero-fills instead of raising."""
     wavelength = np.linspace(5000.0, 6000.0, 100)
     template = np.column_stack((wavelength, np.full_like(wavelength, 1e-9)))
     band = np.column_stack((wavelength, np.ones_like(wavelength)))
-    qe = np.array([[4500.0, 0.8], [7000.0, 0.8]])
+    qe = np.array([[4500.0, 0.8], [8500.0, 0.8]])
     telescope = {"diameter_mm": 358.0, "obstruction_mm": 87.5, "efficiency": 0.7, "focal_length_mm": 2000.0}
     detector = Detector(10.0, 2.0, 10000.0, 16)
     atmosphere = {"airmass": 1.0, "seeing_arcsec": 1.0, "transmission_curve": None}
     sky = {"sky_mag": 20.0, "sky_zero_point_jy": 3631.0, "sky_at_telescope": True}
+    result = SpectroscopyETC(telescope, detector, atmosphere, sky).compute_spectroscopy(
+        template, 1000.0, 1.0, 10.0, (5500.0, 8000.0), 10.0, qe, band, visual_band=band)
+    covered = result["wavelength_aa"] <= 6000.0
+    assert np.all(result.loc[covered, "photons_source_es"].to_numpy()[:-1] > 0.0)
+    assert np.allclose(result.loc[~covered, "photons_source_es"], 0.0)
+    assert np.allclose(result.loc[~covered, "snr"], 0.0)
+
+
+def test_calibration_band_coverage_is_still_strict():
+    """Zero-fill must not reach the calibration integral: a partially covered
+    reference band would silently rescale the whole spectrum (x1.9 for half
+    coverage)."""
+    from etc_physics import calibrated_template_magnitude
+    wavelength = np.linspace(4000.0, 7000.0, 600)
+    ref_band = np.column_stack((wavelength, ((wavelength >= 5000) & (wavelength <= 6000)).astype(float)))
+    vis_band = np.column_stack((wavelength, ((wavelength >= 6200) & (wavelength <= 6800)).astype(float)))
+    half = wavelength[wavelength >= 5500.0]
+    template_half = np.column_stack((half, np.full_like(half, 1e-12)))
     try:
-        SpectroscopyETC(telescope, detector, atmosphere, sky).compute_spectroscopy(
-            template, 1000.0, 1.0, 10.0, (7000.0, 8000.0), 10.0, qe, band, visual_band=band)
+        calibrated_template_magnitude(template_half, 10.0, ref_band, 3631.0, 0.0, vis_band, 3631.0)
     except ValueError as exc:
-        assert "template spectrum covers" in str(exc)
+        assert "calibration" in str(exc) or "covers only" in str(exc)
     else:
-        raise AssertionError("out-of-coverage spectrum must not silently return zero counts")
+        raise AssertionError("partially covered reference band must raise, not silently rescale")
+
+
+def test_atmosphere_extends_edges_instead_of_going_opaque():
+    from etc_physics import atmospheric_transmission
+    import astropy.units as u
+    curve = np.column_stack((np.linspace(4000.0, 7000.0, 50), np.full(50, 0.8)))
+    wave = np.array([3500.0, 5500.0, 8000.0]) * u.AA
+    transmission = atmospheric_transmission(wave, {"airmass": 1.0, "transmission_curve": curve})
+    assert np.allclose(transmission, 0.8), transmission
 
 
 def test_spectroscopic_observing_filter_applies_to_source_and_sky():
@@ -222,10 +249,83 @@ def test_extended_source_photometry_uniform_disc():
     assert extended["peak_e_unclipped"] < point["peak_e_unclipped"]
 
 
+def test_slit_spectrograph_resolving_power_lhires_like():
+    """LHIRES III-like: 2400 l/mm Littrow, 200/200 mm, 25 um slit on a 2 m FL
+    telescope -> R of order 2e4 at H-alpha, slit-limited."""
+    from spectroscopy import slit_spectrograph_resolving_power
+    result = slit_spectrograph_resolving_power(6563.0, 2400.0, 200.0, 200.0, 2000.0,
+                                               2.58, 3.0)  # 25 um at 2 m FL = 2.58"
+    assert 10000.0 < result["resolving_power"] < 30000.0, result
+    assert result["limited_by"] == "slit"
+    low_res = slit_spectrograph_resolving_power(6563.0, 300.0, 130.0, 130.0, 2000.0, 2.58, 3.0)
+    assert low_res["resolving_power"] < result["resolving_power"]
+
+
+def test_gain_table_loader():
+    from detector import load_gain_table
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".dat", delete=False) as stream:
+        stream.write("# setting  e/ADU  RN  FWC\n0 3.6 3.5 50000\n100, 1.0, 1.5, 20000\n")
+        path = Path(stream.name)
+    try:
+        rows = load_gain_table(path)
+        assert len(rows) == 2 and rows[0]["gain_setting"] == 0.0
+        assert rows[1] == {"gain_setting": 100.0, "gain_e_adu": 1.0,
+                           "read_noise_e": 1.5, "full_well_e": 20000.0}
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def test_stack_planner_closed_form():
+    from solvers import plan_stack, exposure_time_for_snr
+    plan = plan_stack(100.0, 50.0, 20.0, 1.0, 5.0, 20.0, max_unsaturated_exptime_s=60.0)
+    assert plan["limited_by"] == "saturation" and plan["sub_exposure_s"] == 60.0
+    assert plan["achieved_snr"] >= 100.0
+    stacked = plan["n_frames"] * plan["sub_exposure_s"]
+    snr_check = 50.0 * stacked / np.sqrt((50.0 + 20.0 + 1.0) * stacked
+                                         + plan["n_frames"] * 20.0 * 25.0)
+    assert np.isclose(snr_check, plan["achieved_snr"])
+    assert plan["read_noise_penalty_percent"] >= 0.0
+    ideal = exposure_time_for_snr(100.0, 50.0, 20.0, 1.0, 5.0, 20.0)
+    assert stacked >= ideal
+
+
+def test_sigma_ew_column_present_and_scales_inversely_with_snr():
+    wavelength = np.linspace(5000.0, 6000.0, 100)
+    template = np.column_stack((wavelength, np.full_like(wavelength, 1e-9)))
+    band = np.column_stack((wavelength, np.ones_like(wavelength)))
+    qe = np.array([[4500.0, 0.8], [7000.0, 0.8]])
+    telescope = {"diameter_mm": 358.0, "obstruction_mm": 87.5, "efficiency": 0.7, "focal_length_mm": 2000.0}
+    detector = Detector(10.0, 2.0, 1e9, 32)
+    atmosphere = {"airmass": 1.0, "seeing_arcsec": 1.0, "transmission_curve": None}
+    sky = {"sky_mag": 20.0, "sky_zero_point_jy": 3631.0, "sky_at_telescope": True}
+    etc = SpectroscopyETC(telescope, detector, atmosphere, sky)
+    short = etc.compute_spectroscopy(template, 1000.0, 1.0, 10.0, (5200.0, 5800.0), 10.0, qe, band, visual_band=band)
+    long = etc.compute_spectroscopy(template, 1000.0, 1.0, 40.0, (5200.0, 5800.0), 10.0, qe, band, visual_band=band)
+    assert "sigma_ew_mangstrom" in short.columns
+    assert float(long["sigma_ew_mangstrom"].median()) < float(short["sigma_ew_mangstrom"].median())
+
+
+def test_filter_profile_builder_matches_svo_scale():
+    """Synthetic Vega zero point of the shipped Bessell.V profile must land
+    within ~1% of the SVO-declared value."""
+    from filter_catalog import load_filter_profile
+    from make_filter_profile import synthetic_vega_zero_point_jy
+    profile = load_filter_profile(Path(__file__).resolve().parent.parent / "data", "Bessell.V", "Vega")
+    zp = synthetic_vega_zero_point_jy(profile.transmission[:, 0], profile.transmission[:, 1])
+    assert abs(zp / profile.zero_point_jy - 1.0) < 0.02, zp
+
+
 if __name__ == "__main__":
     test_explicit_nm_qe_conversion()
     test_svo_energy_and_photon_semantics_differ_for_coloured_sed()
-    test_spectroscopy_rejects_template_outside_requested_range()
+    test_spectroscopy_zero_fills_template_outside_coverage()
+    test_calibration_band_coverage_is_still_strict()
+    test_atmosphere_extends_edges_instead_of_going_opaque()
+    test_slit_spectrograph_resolving_power_lhires_like()
+    test_gain_table_loader()
+    test_stack_planner_closed_form()
+    test_sigma_ew_column_present_and_scales_inversely_with_snr()
+    test_filter_profile_builder_matches_svo_scale()
     test_spectroscopic_observing_filter_applies_to_source_and_sky()
     test_fits_atmosphere_wavelength_unit_is_honoured()
     test_two_column_fits_image_is_accepted()

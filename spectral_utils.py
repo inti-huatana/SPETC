@@ -116,6 +116,20 @@ def interpolate_zero_filled(target_wavelength_aa, curve, name="spectral curve", 
     return result
 
 
+def interpolate_edge_extended(target_wavelength_aa, curve, name="spectral curve", *, clip=None):
+    """Interpolate, extending the first/last value outside the curve coverage.
+
+    Appropriate for smooth physical quantities that certainly do not vanish
+    outside a file's tabulated range — above all an atmospheric transmission
+    curve, where zero-filling would model a perfectly opaque atmosphere.
+    """
+    item = as_curve(curve, name=name)
+    result = np.interp(np.asarray(target_wavelength_aa, dtype=float), item.wavelength_aa, item.values)
+    if clip is not None:
+        result = np.clip(result, *clip)
+    return result
+
+
 def load_two_column_curve(path, *, wavelength_unit_name="Angstrom", name="spectral curve"):
     path = Path(path)
     if not path.is_file():

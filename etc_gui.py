@@ -20,17 +20,17 @@ from astroquery.simbad import Simbad
 
 from ephemeris import compute_target_track
 from photometry import PhotometryETC
-from spectroscopy import SpectroscopyETC
-from detector import Detector, load_qe_curve, load_transmission_curve
+from spectroscopy import SpectroscopyETC, slit_spectrograph_resolving_power
+from detector import Detector, load_qe_curve, load_transmission_curve, load_gain_table
 from spectral_utils import load_fits_transmission_curve, interpolate_zero_filled
-from solvers import exposure_time_for_snr
+from solvers import exposure_time_for_snr, plan_stack
 from config_manager import OBSERVATORY_PRESETS
 import filter_catalog as fcat
 import star_catalog as scat
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib_plots import show_photometry_plot, show_spectroscopy_plot
-from sky_background import sky_magnitude_vega
+from sky_background import sky_magnitude_vega, SKY_WAVELENGTH_AA, SKY_MAG_VEGA
 from sky_brightness import sky_brightness_total, BAND_WAVELENGTH_NM, BAND_VEGA_ZEROPOINT_JY
 from etc_physics import synthetic_magnitude, magnitude_f_lambda
 
@@ -299,6 +299,20 @@ class ETCGUI(tk.Tk):
 #        ttk.Label(f, text="Optics response: wavelength, throughput excluding QE. qe.dat is loaded separately.\n"
 #                          "Slit R(width): slit width [arcsec], measured resolving power R.",
 #                  foreground="gray35", wraplength=300, justify="left").grid(row=14, column=0, columnspan=2, sticky="w", pady=(3, 0))
+        self.gain_table_path_var = self._var("gain_table_path", "")
+        self.gain_setting_var = tk.StringVar(value="")
+        self.gain_table_rows = []
+        ttk.Label(f, text="CMOS gain table:").grid(row=15, column=0, sticky="w")
+        gain_row = ttk.Frame(f); gain_row.grid(row=15, column=1, sticky="ew")
+        gain_row.columnconfigure(0, weight=1)
+        self.gain_setting_combo = ttk.Combobox(gain_row, textvariable=self.gain_setting_var,
+                                               state="disabled", width=8, values=())
+        self.gain_setting_combo.grid(row=0, column=0, sticky="ew")
+        self.gain_setting_combo.bind("<<ComboboxSelected>>", lambda _event: self._apply_gain_setting())
+        ttk.Button(gain_row, text="Browse…", command=self._choose_gain_table).grid(row=0, column=1, padx=(3, 0))
+        ttk.Label(f, text="Gain table rows: setting, e-/ADU, read noise e-, full well e-. Selecting a"
+                          " setting fills the three detector fields.",
+                  foreground="gray35", wraplength=300, justify="left").grid(row=16, column=0, columnspan=2, sticky="w")
 
         f = self._section(holder, "ATMOSPHERE / SKY")
         self.seeing_var = self._var("seeing_arcsec", "0.8")
@@ -310,8 +324,19 @@ class ETCGUI(tk.Tk):
             self.sky_model_var.set("ING")
         self._entry(f, 0, "Seeing FWHM (arcsec):", self.seeing_var)
         ttk.Label(f, text="Sky background:").grid(row=1, column=0, sticky="w")
-        ttk.Combobox(f, textvariable=self.sky_model_var, state="readonly", values=("ing", "fixed_ab")).grid(row=1, column=1, sticky="ew")
+        ttk.Combobox(f, textvariable=self.sky_model_var, state="readonly", values=("ing", "fixed_ab", "sqm")).grid(row=1, column=1, sticky="ew")
         self._entry(f, 2, "Fixed sky (AB mag/arcsec2):", self.sky_var)
+        self.sqm_var = self._var("sqm_v_mag_arcsec2", "20.8")
+        self.bortle_var = tk.StringVar(value="")
+        self._entry(f, 6, "SQM zenith (V mag/arcsec2):", self.sqm_var)
+        ttk.Label(f, text="Bortle class preset:").grid(row=7, column=0, sticky="w")
+        bortle_combo = ttk.Combobox(f, textvariable=self.bortle_var, state="readonly", width=6,
+                                    values=tuple(str(i) for i in range(1, 10)))
+        bortle_combo.grid(row=7, column=1, sticky="ew")
+        bortle_combo.bind("<<ComboboxSelected>>", lambda _event: self._apply_bortle_preset())
+        ttk.Label(f, text="sqm mode: your zenith SQM reading sets the V sky; band colours and the"
+                          " Moon model are applied on top. Bortle preset fills a typical SQM.",
+                  foreground="gray35", wraplength=300, justify="left").grid(row=8, column=0, columnspan=2, sticky="w")
         self.psf_model_var = self._var("psf_model", "gaussian")
         self.moffat_beta_var = self._var("moffat_beta", "2.5")
         ttk.Label(f, text="PSF model:").grid(row=3, column=0, sticky="w")
@@ -344,6 +369,7 @@ class ETCGUI(tk.Tk):
         self.eff_var.trace_add("write", lambda *_: self._update_combined_response_preview())
         self.throughput_unit_var.trace_add("write", lambda *_: self._on_throughput_unit_changed())
         self.qe_unit_var.trace_add("write", lambda *_: self._on_qe_unit_changed())
+        self._load_gain_table_from_path(silent=True)
 
     def _build_mode_column(self, holder):
         f = self._section(holder, "CALCULATION")
@@ -357,6 +383,11 @@ class ETCGUI(tk.Tk):
         self._entry(f, 3, "Target S/N (optional):", self.target_snr_var)
         ttk.Label(f, text="A target S/N overrides exposure time..", foreground="gray35", wraplength=300,
                   justify="left").grid(row=4, column=0, columnspan=2, sticky="w")
+        self.sub_exposure_var = self._var("stack_sub_exposure_s", "0")
+        self._entry(f, 5, "Stack sub-exposure (s, 0=auto):", self.sub_exposure_var)
+        self.stack_plan_var = tk.StringVar(value="Stack plan appears here after a run with a target S/N.")
+        ttk.Label(f, textvariable=self.stack_plan_var, foreground="#1f4f82", wraplength=300,
+                  justify="left").grid(row=6, column=0, columnspan=2, sticky="w", pady=(3, 0))
 
         f = self._section(holder, "PHOTOMETRY")
         self.aperture_var = self._var("photometric_aperture_radius_arcsec", "1.0")
@@ -371,6 +402,11 @@ class ETCGUI(tk.Tk):
         #                  "stays the integrated magnitude spread uniformly over the stated area;\n"
         #                  "valid when the source is much larger than the seeing disc.",
         #          foreground="gray35", wraplength=280, justify="left").grid(row=3, column=0, columnspan=2, sticky="w")
+        self.comparison_mag_var = self._var("comparison_star_mag", "")
+        self._entry(f, 4, "Comparison star mag (optional):", self.comparison_mag_var)
+        self.differential_var = tk.StringVar(value="")
+        ttk.Label(f, textvariable=self.differential_var, foreground="#1f4f82", wraplength=280,
+                  justify="left").grid(row=5, column=0, columnspan=2, sticky="w", pady=(3, 0))
 
         f = self._section(holder, "SPECTROSCOPY")
         self.spectroscopy_mode_var = self._var("spectroscopy_mode", "slit")
@@ -405,6 +441,19 @@ class ETCGUI(tk.Tk):
         ttk.Label(f, text="Slit orientation:").grid(row=14, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.slit_orientation_var, state="readonly",
                      values=("parallactic", "fixed")).grid(row=14, column=1, sticky="ew")
+        self.spec_grating_lines_var = self._var("spectrograph_grating_lines_mm", "600")
+        self.spec_collimator_var = self._var("spectrograph_collimator_fl_mm", "130")
+        self.spec_camera_var = self._var("spectrograph_camera_fl_mm", "130")
+        for row, label, var in [(16, "Spectrograph grating (l/mm):", self.spec_grating_lines_var),
+                                (17, "Collimator focal length (mm):", self.spec_collimator_var),
+                                (18, "Camera focal length (mm):", self.spec_camera_var)]:
+            self._entry(f, row, label, var)
+        ttk.Button(f, text="Compute R from geometry → fill R field",
+                   command=self._compute_slit_resolving_power).grid(row=19, column=0, columnspan=2, sticky="ew", pady=(3, 1))
+        self.spec_geometry_status_var = tk.StringVar(
+            value="Littrow grating equation; uses telescope FL, slit width, seeing and the S/N reference wavelength. R stays editable.")
+        ttk.Label(f, textvariable=self.spec_geometry_status_var, foreground="gray35",
+                  wraplength=280, justify="left").grid(row=20, column=0, columnspan=2, sticky="w")
 #        ttk.Label(f, text="Slitless: a Star Analyser 100/200 is described by its grooves/mm and\n"
 #                          "grating-to-sensor distance, which set the dispersion; 0 lines/mm keeps the\n"
 #                          "manual A/pix. 'fixed' slit orientation applies the worst-case Filippenko\n"
@@ -596,8 +645,7 @@ class ETCGUI(tk.Tk):
             self.time_convert_output_var.set(output)
             #self.time_convert_status_var.set("UTC scale")
         except Exception as exc:
-            self.time_convert_output_var.set("")
-            self.time_convert_status_var.set(f"Conversion failed: {exc}")
+            self.time_convert_output_var.set(f"Conversion failed: {exc}")
 
     @staticmethod
     def _parse_dms_value(numbers, direction=None):
@@ -647,8 +695,7 @@ class ETCGUI(tk.Tk):
             self.dms_output_var.set(f"LAT {lat:.4f} LON {lon:.4f}")
             #self.dms_status_var.set("East long>0")
         except Exception as exc:
-            self.dms_output_var.set("")
-            self.dms_status_var.set(f"Conversion failed: {exc}")
+            self.dms_output_var.set(f"Conversion failed: {exc}")
 
     def _load_site_records(self):
         """Load defaults plus the persistent local site list."""
@@ -760,6 +807,127 @@ class ETCGUI(tk.Tk):
             "slitless_extraction_width_arcsec", "slitless_dispersion_aa_pix", "slitless_intrinsic_fwhm_pix",
             "qe_wavelength_unit", "throughput_wavelength_unit",
         )
+
+    def _update_stack_plan(self, target_snr, source_rate, sky_rate, dark_rate_total,
+                           n_pixels, max_unsaturated_s, detector, what="aperture"):
+        """Fill the stack-plan label from the selected-time rates."""
+        user_sub = float(self.sub_exposure_var.get() or 0.0)
+        if target_snr is None:
+            plan = plan_stack(100.0, source_rate, sky_rate, dark_rate_total,
+                              detector.read_noise_e, n_pixels, max_unsaturated_s, user_sub)
+            if plan is None:
+                self.stack_plan_var.set("Stack plan unavailable for the current rates.")
+                return
+            self.stack_plan_var.set(
+                f"Sub-exposure guidance ({what}): saturation caps single frames at "
+                f"{max_unsaturated_s:.0f} s; background dominates read noise above "
+                f"{plan['sky_limited_sub_s']:.0f} s per frame. Enter a target S/N for a full plan.")
+            return
+        plan = plan_stack(target_snr, source_rate, sky_rate, dark_rate_total,
+                          detector.read_noise_e, n_pixels, max_unsaturated_s, user_sub)
+        if plan is None:
+            self.stack_plan_var.set("Stack plan unavailable for the current rates.")
+            return
+        self.stack_plan_var.set(
+            f"Stack plan ({what}): {plan['n_frames']} × {plan['sub_exposure_s']:.0f} s "
+            f"(sub limited by {plan['limited_by']}) = {plan['total_time_s']:.0f} s total for "
+            f"S/N {plan['achieved_snr']:.0f}; read-noise penalty +{plan['read_noise_penalty_percent']:.1f}% "
+            f"vs one ideal exposure. Background beats read noise above {plan['sky_limited_sub_s']:.0f} s/frame.")
+
+    def _update_differential_precision(self, calculator, result, exposure_s, run_kwargs):
+        """Differential-photometry error in mmag against a comparison star."""
+        text = self.comparison_mag_var.get().strip()
+        if not text:
+            self.differential_var.set("")
+            return
+        try:
+            comparison_mag = float(text)
+            comparison = calculator.compute_photometry_single(
+                self.star_spec, run_kwargs["observing_band"], self.qe_curve, comparison_mag,
+                exposure_s, run_kwargs["reference_zero_point_jy"], run_kwargs["reference_band"],
+                self.selected_star.mv0, run_kwargs["visual_band"], run_kwargs["visual_zero_point_jy"],
+                run_kwargs["observing_zero_point_jy"], run_kwargs["reference_detector_type"],
+                run_kwargs["visual_detector_type"], run_kwargs["observing_detector_type"],
+                **self._source_geometry_kwargs())
+        except (ValueError, KeyError) as exc:
+            self.differential_var.set(f"Differential precision unavailable: {exc}")
+            return
+        # 1.0857 mag per unit fractional error; target and comparison noise
+        # (scintillation included in each S/N) added in quadrature.  Their
+        # scintillation is treated as uncorrelated, which is conservative.
+        sigma_mmag = 1085.7 * np.sqrt(result["snr"] ** -2 + comparison["snr"] ** -2)
+        self.differential_var.set(
+            f"Differential precision vs m={comparison_mag:g} comparison: "
+            f"{sigma_mmag:.1f} mmag per {exposure_s:.0f} s frame "
+            f"(target S/N {result['snr']:.0f}, comparison S/N {comparison['snr']:.0f}).")
+
+    def _compute_slit_resolving_power(self):
+        try:
+            result = slit_spectrograph_resolving_power(
+                float(self.reference_wavelength_var.get()),
+                float(self.spec_grating_lines_var.get()),
+                float(self.spec_collimator_var.get()),
+                float(self.spec_camera_var.get()),
+                float(self.focal_var.get()),
+                float(self.slit_var.get()),
+                float(self.seeing_var.get()))
+        except (ValueError, KeyError) as exc:
+            self.spec_geometry_status_var.set(f"Cannot compute R: {exc}")
+            return
+        self.resolution_var.set(f"{result['resolving_power']:.0f}")
+        self.spec_geometry_status_var.set(
+            f"R = {result['resolving_power']:.0f} ({result['limited_by']}-limited), "
+            f"{result['resolution_element_aa']:.2f} Å element, "
+            f"{result['dispersion_aa_mm']:.1f} Å/mm at the detector. R field updated; edit freely.")
+
+    # Typical zenith SQM readings at the midpoint of each Bortle class
+    # (Bortle 2001, Sky & Telescope; commonly used amateur conversion).
+    BORTLE_SQM = {1: 21.9, 2: 21.8, 3: 21.6, 4: 21.1, 5: 20.5,
+                  6: 19.8, 7: 19.0, 8: 18.0, 9: 17.0}
+
+    def _apply_bortle_preset(self):
+        try:
+            bortle = int(self.bortle_var.get())
+        except ValueError:
+            return
+        self.sqm_var.set(f"{self.BORTLE_SQM[bortle]:.1f}")
+        self.status_var.set(f"Bortle {bortle}: typical zenith SQM {self.BORTLE_SQM[bortle]:.1f} mag/arcsec2.")
+
+    def _choose_gain_table(self):
+        path = filedialog.askopenfilename(title="Select CMOS gain table",
+                                          filetypes=[("Data files", "*.dat *.txt *.csv"), ("All files", "*")])
+        if not path:
+            return
+        self.gain_table_path_var.set(str(Path(path).resolve()))
+        self._load_gain_table_from_path()
+
+    def _load_gain_table_from_path(self, silent=False):
+        path = self.gain_table_path_var.get().strip()
+        if not path:
+            return
+        try:
+            self.gain_table_rows = load_gain_table(path)
+        except (OSError, ValueError) as exc:
+            self.gain_table_rows = []
+            self.gain_setting_combo.configure(state="disabled", values=())
+            if not silent:
+                messagebox.showerror("Gain table", str(exc))
+            return
+        values = tuple(f"{row['gain_setting']:g}" for row in self.gain_table_rows)
+        self.gain_setting_combo.configure(state="readonly", values=values)
+        if self.gain_setting_var.get() not in values:
+            self.gain_setting_var.set(values[0])
+        self._apply_gain_setting()
+
+    def _apply_gain_setting(self):
+        selected = self.gain_setting_var.get().strip()
+        for row in self.gain_table_rows:
+            if f"{row['gain_setting']:g}" == selected:
+                self.gain_var.set(f"{row['gain_e_adu']:g}")
+                self.readnoise_var.set(f"{row['read_noise_e']:g}")
+                self.fullwell_var.set(f"{row['full_well_e']:g}")
+                self.status_var.set(f"Detector set from gain table: setting {selected}.")
+                return
 
     def _choose_throughput_curve(self):
         path = filedialog.askopenfilename(title="Select instrument transmission curve",
@@ -1386,11 +1554,22 @@ class ETCGUI(tk.Tk):
         galactic_lat = float(field.galactic.b.deg)
         models = []
         colour_wave = np.asarray(BAND_WAVELENGTH_NM, dtype=float) * 10.0
+        sqm_mode = self.sky_model_var.get() == "sqm"
+        if sqm_mode:
+            # The user's zenith SQM reading is an observed V surface
+            # brightness that already contains their light pollution and
+            # airglow; the built-in table only supplies the band colour.
+            sqm_v = float(self.sqm_var.get())
+            v_table = float(np.interp(5510.0, SKY_WAVELENGTH_AA, SKY_MAG_VEGA))
+            pivot_colour = float(np.interp(pivot, SKY_WAVELENGTH_AA, SKY_MAG_VEGA)) - v_table
         for utc, alt, airmass, sun_alt, moon_alt, moon_sep, phase in zip(
                 track["utc_datetime"], track["alt_target"], track["airmass_target"], track["alt_sun"],
                 track["alt_moon"], track["moon_sep_deg"], track["phase_moon"]):
-            base_mag = sky_magnitude_vega(pivot, utc, alt, airmass, sun_alt,
-                                          ecliptic_lat_deg=ecliptic_lat, galactic_lat_deg=galactic_lat)
+            if sqm_mode:
+                base_mag = sqm_v + pivot_colour
+            else:
+                base_mag = sky_magnitude_vega(pivot, utc, alt, airmass, sun_alt,
+                                              ecliptic_lat_deg=ecliptic_lat, galactic_lat_deg=galactic_lat)
             # Krisciunas--Schaefer moonlight terms are evaluated in the nine
             # supplied broad bands, then used as a spectral colour model.  The
             # ING dark/twilight/day brightness remains the normalization.
@@ -1618,6 +1797,21 @@ class ETCGUI(tk.Tk):
                     reference_profile.detector_type, visual_profile.detector_type, observing_profile.detector_type,
                     texp, target_snr)
                 result = results[idx]
+                exposure_used = float(values[idx]) if target_snr is not None else texp
+                self._update_stack_plan(target_snr, result["source_rate_per_s"], result["sky_rate_per_s"],
+                                        detector.dark_current_e_s_pix * result["n_pixels"],
+                                        result["n_pixels"], result["max_unsaturated_exptime_s"], detector)
+                selected_calculator = PhotometryETC(
+                    telescope, detector, self._atmosphere_dict(track["airmass_target"][idx], atmo), sky_models[idx])
+                run_kwargs = dict(
+                    observing_band=observing_band, reference_band=reference_band,
+                    reference_zero_point_jy=reference_profile.zero_point_jy, visual_band=visual_band,
+                    visual_zero_point_jy=visual_profile.zero_point_jy,
+                    observing_zero_point_jy=observing_profile.zero_point_jy,
+                    reference_detector_type=reference_profile.detector_type,
+                    visual_detector_type=visual_profile.detector_type,
+                    observing_detector_type=observing_profile.detector_type)
+                self._update_differential_precision(selected_calculator, result, exposure_used, run_kwargs)
                 frame = pd.DataFrame([result]); self._display_table(frame, "mag"); self.result_df = frame
                 plot_args = ("photometry", track, values, label, idx, self.band_var.get())
                 snr_values = values if target_snr is None else np.where(np.isfinite(values), target_snr, np.nan)
@@ -1642,6 +1836,17 @@ class ETCGUI(tk.Tk):
                     visual_profile.zero_point_jy, reference_profile.detector_type, visual_profile.detector_type,
                     texp, target_snr, idx)
                 spectrum = spectra[idx]
+                reference_wl = float(self.reference_wavelength_var.get())
+                ref_row = spectrum.iloc[int(np.argmin(np.abs(spectrum["wavelength_aa"].to_numpy() - reference_wl)))]
+                resel_pixels = float(spectrum.attrs["n_pixels_per_resel"])
+                self._update_stack_plan(target_snr, float(ref_row["photons_source_es"]),
+                                        float(ref_row["photons_sky_es"]),
+                                        detector.dark_current_e_s_pix * resel_pixels, resel_pixels,
+                                        float(ref_row["max_unsaturated_exptime_s"]), detector,
+                                        what=f"resel at {reference_wl:.0f} Å")
+                self.differential_var.set(
+                    f"σ(EW) at {reference_wl:.0f} Å: {float(ref_row['sigma_ew_mangstrom']):.1f} mÅ "
+                    "(Cayrel) for the selected exposure.")
                 self._display_table(spectrum, "wavelength_aa"); self.result_df = spectrum
                 plot_args = ("spectroscopy", track, spectra, values, label, idx, slider_indices)
                 snr_values = values if target_snr is None else np.where(np.isfinite(values), target_snr, np.nan)

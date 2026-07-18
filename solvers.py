@@ -35,12 +35,16 @@ import numpy as np
 
 
 def exposure_time_for_snr(target_snr, source_rate_e_s, sky_rate_e_s,
-                          dark_rate_e_s=0.0, read_noise_e=0.0, n_pixels=1.0):
+                          dark_rate_e_s=0.0, read_noise_e=0.0, n_pixels=1.0,
+                          extra_variance_rate_e2_s=0.0):
     """Closed-form exposure solution including sky, dark and read noise.
 
     For S = source rate and Q = source + sky + dark, the ETC convention is
     ``SNR = S t / sqrt(Q t + Npix RN^2)``.  Solving the resulting quadratic
-    gives the positive real exposure time.
+    gives the positive real exposure time.  ``extra_variance_rate_e2_s``
+    absorbs additional time-linear variance terms — above all scintillation,
+    whose variance (S_rate C)^2 t / 2 accumulates exactly like a Poisson
+    rate (see ``observing_conditions.scintillation_variance_rate_e2_s``).
     """
     target_snr = float(target_snr)
     source_rate_e_s = float(source_rate_e_s)
@@ -50,7 +54,7 @@ def exposure_time_for_snr(target_snr, source_rate_e_s, sky_rate_e_s,
     n_pixels = float(n_pixels)
     if target_snr <= 0 or source_rate_e_s <= 0 or sky_rate_e_s < 0 or dark_rate_e_s < 0 or n_pixels <= 0:
         return np.nan
-    q_rate = source_rate_e_s + sky_rate_e_s + dark_rate_e_s
+    q_rate = source_rate_e_s + sky_rate_e_s + dark_rate_e_s + float(extra_variance_rate_e2_s)
     read_variance = n_pixels * read_noise_e**2
     s2 = target_snr**2
     return (s2 * q_rate + np.sqrt((s2 * q_rate)**2 + 4 * source_rate_e_s**2 * s2 * read_variance)) / (2 * source_rate_e_s**2)
@@ -58,7 +62,7 @@ def exposure_time_for_snr(target_snr, source_rate_e_s, sky_rate_e_s,
 
 def plan_stack(target_snr, source_rate_e_s, sky_rate_e_s, dark_rate_e_s,
                read_noise_e, n_pixels, max_unsaturated_exptime_s,
-               user_sub_exposure_s=0.0):
+               user_sub_exposure_s=0.0, extra_variance_rate_e2_s=0.0):
     """Plan a stack of sub-exposures reaching a target *total* S/N.
 
     The stacked CCD equation for N frames of length t (T = N t) is
@@ -74,7 +78,9 @@ def plan_stack(target_snr, source_rate_e_s, sky_rate_e_s, dark_rate_e_s,
     """
     target_snr = float(target_snr)
     source = float(source_rate_e_s)
-    q_rate = source + float(sky_rate_e_s) + float(dark_rate_e_s)
+    # Scintillation variance is linear in total time and independent of the
+    # framing, so it enters the stacked budget as an extra Poisson-like rate.
+    q_rate = source + float(sky_rate_e_s) + float(dark_rate_e_s) + float(extra_variance_rate_e2_s)
     read_var = float(n_pixels) * float(read_noise_e) ** 2
     if target_snr <= 0 or source <= 0:
         return None
@@ -93,7 +99,8 @@ def plan_stack(target_snr, source_rate_e_s, sky_rate_e_s, dark_rate_e_s,
     achieved_snr = (source * stacked_time_s
                     / np.sqrt(q_rate * stacked_time_s + n_frames * read_var))
     ideal_time_s = exposure_time_for_snr(target_snr, source, sky_rate_e_s,
-                                         dark_rate_e_s, read_noise_e, n_pixels)
+                                         dark_rate_e_s, read_noise_e, n_pixels,
+                                         extra_variance_rate_e2_s)
     penalty_percent = 100.0 * (total_time_s / ideal_time_s - 1.0) if ideal_time_s > 0 else np.nan
     return {"sub_exposure_s": sub_exposure_s, "n_frames": n_frames,
             "total_time_s": stacked_time_s, "achieved_snr": float(achieved_snr),

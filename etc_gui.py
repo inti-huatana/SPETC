@@ -31,6 +31,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib_plots import show_photometry_plot, show_spectroscopy_plot
 from sky_background import sky_magnitude_vega, SKY_WAVELENGTH_AA, SKY_MAG_VEGA
+from observing_conditions import scintillation_variance_rate_e2_s
 from sky_brightness import sky_brightness_total, BAND_WAVELENGTH_NM, BAND_VEGA_ZEROPOINT_JY
 from etc_physics import synthetic_magnitude, magnitude_f_lambda
 
@@ -809,12 +810,16 @@ class ETCGUI(tk.Tk):
         )
 
     def _update_stack_plan(self, target_snr, source_rate, sky_rate, dark_rate_total,
-                           n_pixels, max_unsaturated_s, detector, what="aperture"):
+                           n_pixels, max_unsaturated_s, detector, what="aperture",
+                           airmass=1.0):
         """Fill the stack-plan label from the selected-time rates."""
         user_sub = float(self.sub_exposure_var.get() or 0.0)
+        scint_rate = scintillation_variance_rate_e2_s(
+            source_rate, float(self.diam_var.get()), airmass, float(self.elev_var.get()))
         if target_snr is None:
             plan = plan_stack(100.0, source_rate, sky_rate, dark_rate_total,
-                              detector.read_noise_e, n_pixels, max_unsaturated_s, user_sub)
+                              detector.read_noise_e, n_pixels, max_unsaturated_s, user_sub,
+                              extra_variance_rate_e2_s=scint_rate)
             if plan is None:
                 self.stack_plan_var.set("Stack plan unavailable for the current rates.")
                 return
@@ -824,7 +829,8 @@ class ETCGUI(tk.Tk):
                 f"{plan['sky_limited_sub_s']:.0f} s per frame. Enter a target S/N for a full plan.")
             return
         plan = plan_stack(target_snr, source_rate, sky_rate, dark_rate_total,
-                          detector.read_noise_e, n_pixels, max_unsaturated_s, user_sub)
+                          detector.read_noise_e, n_pixels, max_unsaturated_s, user_sub,
+                          extra_variance_rate_e2_s=scint_rate)
         if plan is None:
             self.stack_plan_var.set("Stack plan unavailable for the current rates.")
             return
@@ -1619,9 +1625,11 @@ class ETCGUI(tk.Tk):
                     reference_zero_point_jy, reference_band, template_mv0, visual_band, visual_zero_point_jy,
                     observing_zero_point_jy, reference_detector_type, visual_detector_type, observing_detector_type,
                     **geometry_kwargs)
+                scint_rate = scintillation_variance_rate_e2_s(
+                    probe["source_rate_per_s"], float(self.diam_var.get()), airmass, float(self.elev_var.get()))
                 real_texp = exposure_time_for_snr(target_snr, probe["source_rate_per_s"], probe["sky_rate_per_s"],
                                                    detector.dark_current_e_s_pix * probe["n_pixels"], detector.read_noise_e,
-                                                   probe["n_pixels"])
+                                                   probe["n_pixels"], extra_variance_rate_e2_s=scint_rate)
                 values[i] = real_texp
             else:
                 real_texp = texp
@@ -1667,10 +1675,14 @@ class ETCGUI(tk.Tk):
             if target_snr is not None:
                 probe = calculator.compute_spectroscopy(*args)
                 ref_index = int(np.argmin(np.abs(probe["wavelength_aa"].to_numpy() - reference)))
+                scint_rate = scintillation_variance_rate_e2_s(
+                    probe.iloc[ref_index]["photons_source_es"], float(self.diam_var.get()),
+                    track["airmass_target"][i], float(self.elev_var.get()))
                 real_texp = exposure_time_for_snr(target_snr, probe.iloc[ref_index]["photons_source_es"],
                                                    probe.iloc[ref_index]["photons_sky_es"],
                                                    detector.dark_current_e_s_pix * probe.attrs["n_pixels_per_resel"],
-                                                   detector.read_noise_e, probe.attrs["n_pixels_per_resel"])
+                                                   detector.read_noise_e, probe.attrs["n_pixels_per_resel"],
+                                                   extra_variance_rate_e2_s=scint_rate)
                 values[i] = real_texp
             else:
                 real_texp = texp
@@ -1800,7 +1812,8 @@ class ETCGUI(tk.Tk):
                 exposure_used = float(values[idx]) if target_snr is not None else texp
                 self._update_stack_plan(target_snr, result["source_rate_per_s"], result["sky_rate_per_s"],
                                         detector.dark_current_e_s_pix * result["n_pixels"],
-                                        result["n_pixels"], result["max_unsaturated_exptime_s"], detector)
+                                        result["n_pixels"], result["max_unsaturated_exptime_s"], detector,
+                                        airmass=track["airmass_target"][idx])
                 selected_calculator = PhotometryETC(
                     telescope, detector, self._atmosphere_dict(track["airmass_target"][idx], atmo), sky_models[idx])
                 run_kwargs = dict(
@@ -1843,7 +1856,8 @@ class ETCGUI(tk.Tk):
                                         float(ref_row["photons_sky_es"]),
                                         detector.dark_current_e_s_pix * resel_pixels, resel_pixels,
                                         float(ref_row["max_unsaturated_exptime_s"]), detector,
-                                        what=f"resel at {reference_wl:.0f} Å")
+                                        what=f"resel at {reference_wl:.0f} Å",
+                                        airmass=track["airmass_target"][idx])
                 self.differential_var.set(
                     f"σ(EW) at {reference_wl:.0f} Å: {float(ref_row['sigma_ew_mangstrom']):.1f} mÅ "
                     "(Cayrel) for the selected exposure.")

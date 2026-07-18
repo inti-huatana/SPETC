@@ -154,6 +154,44 @@ automatically restored with that profile.
   extra Poisson-like rate): solved exposures reproduce the requested S/N
   even for bright, scintillation-limited stars.
 
+## Adding template spectra: CALSPEC FITS and STScI atlases
+
+Template spectra can be two-column ASCII **or CALSPEC/STScI-style FITS
+binary tables** (a WAVELENGTH/FLUX table; TUNIT in Angstrom, nm or micron
+is honoured). This covers the whole STScI reference-atlas family: the
+CALSPEC standards, the solar-system surface-brightness atlas
+(Jupiter/Saturn/Uranus/Neptune, solar spectrum), the galactic
+emission-line atlas (Orion, NGC 7009), the transient templates (SN
+Ia/Iax/91bg/Ib/II, kilonova) and the CLOUDY planetary-nebula grids.
+
+Import with:
+
+```bash
+python3 add_template.py path/to/spectrum_or_directory [name] [spt]
+```
+
+The tool copies the file under `data/imported/`, computes the **synthetic
+Vega V magnitude of the file** (this is the catalogue `mv0` — the
+magnitude the file represents) and B−V against the shipped Bessell
+profiles, reports the response-weighted V coverage, and appends the
+`interpola.db.csv` row. Because the ETC always rescales templates to your
+entered magnitude, files with arbitrary or surface-brightness flux units
+(the transients, the planet atlas) are fully usable: only the spectral
+shape matters, and the computed `mv0` keeps the normalization
+self-consistent.
+
+Caveats the tool enforces or flags: a template must at least reach the V
+band (`mv0` cannot be derived otherwise); when it covers less than 99% of
+the V response (e.g. the planet atlas, which starts at 0.53 µm) the `mv0`
+is flagged approximate and you should use **V as the reference filter**
+for that template, so the exact same-response path is used and no
+truncated synthetic integral enters the calibration. For the planet
+surface-brightness spectra pair the template with the **extended-source
+mode** (enter the integrated magnitude and the disc area). Line-dominated
+templates (PN grids at R=6000, the emission-line atlas) are valid up to
+the resolution they were computed at — requesting much higher R dilutes
+the lines.
+
 ## Outputs and where to find them
 
 The Results window has three tabs; everything below is also in the CSV

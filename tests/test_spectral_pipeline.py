@@ -338,6 +338,31 @@ def test_target_snr_solver_includes_scintillation():
     assert t_exp > 2.0 * naive
 
 
+def test_fits_spectrum_loader_calspec_convention():
+    """CALSPEC/STScI FITS tables (WAVELENGTH/FLUX, TUNIT-aware) load as Nx2 rows."""
+    from star_catalog import load_fits_spectrum
+    with tempfile.TemporaryDirectory() as directory:
+        wavelength = np.linspace(1150.0, 26000.0, 500)
+        flux = 3.5e-9 * (wavelength / 5500.0) ** -2
+        columns = [fits.Column(name="WAVELENGTH", format="E", unit="ANGSTROMS", array=wavelength),
+                   fits.Column(name="FLUX", format="E", unit="FLAM", array=flux),
+                   fits.Column(name="STATERROR", format="E", unit="FLAM", array=flux * 0.01)]
+        path = Path(directory) / "calspec_like.fits"
+        fits.HDUList([fits.PrimaryHDU(), fits.BinTableHDU.from_columns(columns)]).writeto(path)
+        spectrum = load_fits_spectrum(path)
+        assert spectrum.shape == (500, 2)
+        assert np.allclose(spectrum[:, 0], wavelength)
+        # Micron-unit surface-brightness table (solar-system atlas style).
+        microns = np.linspace(0.53, 28.75, 300)
+        columns = [fits.Column(name="WAVELENGTH", format="E", unit="MICRONS", array=microns),
+                   fits.Column(name="FLUX", format="E", unit="erg/s/cm2/A/arcsec2",
+                               array=np.full_like(microns, 1e-8))]
+        path2 = Path(directory) / "atlas_like.fits"
+        fits.HDUList([fits.PrimaryHDU(), fits.BinTableHDU.from_columns(columns)]).writeto(path2)
+        spectrum2 = load_fits_spectrum(path2)
+        assert np.isclose(spectrum2[0, 0], 5300.0) and np.isclose(spectrum2[-1, 0], 287500.0)
+
+
 def test_filter_profile_builder_matches_svo_scale():
     """Synthetic Vega zero point of the shipped Bessell.V profile must land
     within ~1% of the SVO-declared value."""
@@ -359,6 +384,7 @@ if __name__ == "__main__":
     test_stack_planner_closed_form()
     test_sigma_ew_column_present_and_scales_inversely_with_snr()
     test_target_snr_solver_includes_scintillation()
+    test_fits_spectrum_loader_calspec_convention()
     test_filter_profile_builder_matches_svo_scale()
     test_spectroscopic_observing_filter_applies_to_source_and_sky()
     test_fits_atmosphere_wavelength_unit_is_honoured()

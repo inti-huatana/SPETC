@@ -118,7 +118,29 @@ class ETCGUI(tk.Tk):
         self._build_data_column(col4)
         self._build_actions_column(col5)
         self.status_var = tk.StringVar(value="Ready")
-        ttk.Label(self, textvariable=self.status_var, relief="sunken", anchor="w").pack(fill="x", padx=5, pady=(0, 5))
+        #ttk.Label(self, textvariable=self.status_var, relief="sunken", anchor="w").pack(fill="x", padx=5, pady=(0, 5))
+        self.status_label = tk.Label(
+            self,
+            textvariable=self.status_var,
+            anchor="w",
+            relief="sunken",
+            bg="#e6e6e6",
+        )
+        self.status_label.pack(fill="x", padx=5, pady=(0, 5))
+        
+        self.status_var.trace_add("write", lambda *_: self._update_status_colour())
+    
+    def _update_status_colour(self):
+        text = self.status_var.get().strip().lower()
+    
+        if text.startswith("calculating"):
+            colour = "#00d9e8"      # cyan
+        elif text.startswith("error"):
+            colour = "#e53935"      # red
+        else:
+            colour = "#e6e6e6"      # default grey
+    
+        self.status_label.configure(bg=colour)
 
     def _new_scroll_column(self, panes, width):
         """Create one independently scrollable column in the main window."""
@@ -229,9 +251,14 @@ class ETCGUI(tk.Tk):
         ttk.Label(f, text="Reference magnitude filter:").grid(row=8, column=0, sticky="w")
         self.reference_filter_combo = ttk.Combobox(f, textvariable=self.reference_band_var, state="readonly", values=())
         self.reference_filter_combo.grid(row=8, column=1, sticky="ew")
-        self.reference_filter_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_template_display())
-        ttk.Label(f, text="The template flux is scaled from its stored Vmag to this measurement. The observing filter is independent.",
-                  foreground="gray35", wraplength=320, justify="left").grid(row=9, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        #self.reference_filter_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_template_display())
+        self.reference_filter_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: (self._update_template_display(),
+                            self._update_combined_response_preview()),
+        )
+        ttk.Label(f, text="The observing filter is independent.", foreground="gray35", wraplength=320, justify="left").grid(row=9, column=0, columnspan=2, sticky="w", pady=(4, 0))
+#        ttk.Label(f, text="The template flux is scaled from its stored Vmag to this measurement. The observing filter is independent.", foreground="gray35", wraplength=320, justify="left").grid(row=9, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
     def _build_instrument_column(self, holder):
         f = self._section(holder, "TELESCOPE AND DETECTOR")
@@ -269,9 +296,9 @@ class ETCGUI(tk.Tk):
         ttk.Button(resolution_row, text="Browse…", command=self._choose_slit_resolution_curve).grid(row=0, column=1, padx=(3, 0))
         ttk.Label(f, text="QE data wavelength unit:").grid(row=13, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.qe_unit_var, state="readonly", values=("Angstrom", "nm", "um"), width=10).grid(row=13, column=1, sticky="ew")
-        ttk.Label(f, text="Optics response: wavelength, throughput excluding QE. qe.dat is loaded separately.\n"
-                          "Slit R(width): slit width [arcsec], measured resolving power R.",
-                  foreground="gray35", wraplength=300, justify="left").grid(row=14, column=0, columnspan=2, sticky="w", pady=(3, 0))
+#        ttk.Label(f, text="Optics response: wavelength, throughput excluding QE. qe.dat is loaded separately.\n"
+#                          "Slit R(width): slit width [arcsec], measured resolving power R.",
+#                  foreground="gray35", wraplength=300, justify="left").grid(row=14, column=0, columnspan=2, sticky="w", pady=(3, 0))
 
         f = self._section(holder, "ATMOSPHERE / SKY")
         self.seeing_var = self._var("seeing_arcsec", "0.8")
@@ -291,10 +318,12 @@ class ETCGUI(tk.Tk):
         ttk.Combobox(f, textvariable=self.psf_model_var, state="readonly",
                      values=("gaussian", "moffat")).grid(row=3, column=1, sticky="ew")
         self._entry(f, 4, "Moffat beta (>1):", self.moffat_beta_var)
-        ttk.Label(f, text="ING: position-dependent night/twilight/day model (van Rhijn airglow,\n"
-                          "zodiacal, starlight, Krisciunas-Schaefer Moon); fixed_ab: manual observed sky.\n"
-                          "Moffat reproduces real seeing wings; beta 2.5-4.7 (Gaussian limit).",
+        ttk.Label(f, text="ING: pos-dep sky model; fixed_ab: observed sky. Moffat real seeing wings; 2.5<= beta <=4.7",
                   foreground="gray35", wraplength=300, justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
+#        ttk.Label(f, text="ING: position-dependent night/twilight/day model (van Rhijn airglow,\n"
+#                          "zodiacal, starlight, Krisciunas-Schaefer Moon); fixed_ab: manual observed sky.\n"
+#                          "Moffat reproduces real seeing wings; beta 2.5-4.7 (Gaussian limit).",
+#                  foreground="gray35", wraplength=300, justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
 
         self.response_preview_section = self._section(holder, "SYSTEM RESPONSE")
         self.response_preview_status = tk.StringVar(value="Select an observing filter and a stellar template.")
@@ -326,7 +355,7 @@ class ETCGUI(tk.Tk):
         self._entry(f, 2, "Exposure time (s):", self.texp_var)
         self.target_snr_var = self._var("target_snr", "")
         self._entry(f, 3, "Target S/N (optional):", self.target_snr_var)
-        ttk.Label(f, text="A target S/N overrides exposure time. Required exposures that saturate are flagged; split them into shorter frames.", foreground="gray35", wraplength=300,
+        ttk.Label(f, text="A target S/N overrides exposure time..", foreground="gray35", wraplength=300,
                   justify="left").grid(row=4, column=0, columnspan=2, sticky="w")
 
         f = self._section(holder, "PHOTOMETRY")
@@ -338,10 +367,10 @@ class ETCGUI(tk.Tk):
         ttk.Combobox(f, textvariable=self.source_geometry_var, state="readonly",
                      values=("point", "extended")).grid(row=1, column=1, sticky="ew")
         self._entry(f, 2, "Extended source area (arcsec2):", self.source_area_var)
-        ttk.Label(f, text="Point: PSF aperture losses. Extended (galaxy/nebula/planet): the magnitude\n"
-                          "stays the integrated magnitude spread uniformly over the stated area;\n"
-                          "valid when the source is much larger than the seeing disc.",
-                  foreground="gray35", wraplength=280, justify="left").grid(row=3, column=0, columnspan=2, sticky="w")
+        #ttk.Label(f, text="Point: PSF aperture losses. Extended (galaxy/nebula/planet): the magnitude\n"
+        #                  "stays the integrated magnitude spread uniformly over the stated area;\n"
+        #                  "valid when the source is much larger than the seeing disc.",
+        #          foreground="gray35", wraplength=280, justify="left").grid(row=3, column=0, columnspan=2, sticky="w")
 
         f = self._section(holder, "SPECTROSCOPY")
         self.spectroscopy_mode_var = self._var("spectroscopy_mode", "slit")
@@ -376,11 +405,11 @@ class ETCGUI(tk.Tk):
         ttk.Label(f, text="Slit orientation:").grid(row=14, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.slit_orientation_var, state="readonly",
                      values=("parallactic", "fixed")).grid(row=14, column=1, sticky="ew")
-        ttk.Label(f, text="Slitless: a Star Analyser 100/200 is described by its grooves/mm and\n"
-                          "grating-to-sensor distance, which set the dispersion; 0 lines/mm keeps the\n"
-                          "manual A/pix. 'fixed' slit orientation applies the worst-case Filippenko\n"
-                          "atmospheric-dispersion slit loss; 'parallactic' avoids it.",
-                  foreground="gray35", wraplength=280, justify="left").grid(row=15, column=0, columnspan=2, sticky="w")
+#        ttk.Label(f, text="Slitless: a Star Analyser 100/200 is described by its grooves/mm and\n"
+#                          "grating-to-sensor distance, which set the dispersion; 0 lines/mm keeps the\n"
+#                          "manual A/pix. 'fixed' slit orientation applies the worst-case Filippenko\n"
+#                          "atmospheric-dispersion slit loss; 'parallactic' avoids it.",
+#                  foreground="gray35", wraplength=280, justify="left").grid(row=15, column=0, columnspan=2, sticky="w")
 
     def _build_data_column(self, holder):
         f = self._section(holder, "FILTER SELECTOR")
@@ -402,13 +431,21 @@ class ETCGUI(tk.Tk):
         self.catalog_status = tk.StringVar(value="Catalog not loaded")
         ttk.Label(f, textvariable=self.catalog_status, foreground="blue", wraplength=420, justify="left").grid(row=2, column=0, columnspan=2, sticky="w")
         self.star_search_var = tk.StringVar()
-        ttk.Label(f, text="Template search:").grid(row=3, column=0, sticky="w")
+        ttk.Label(f, text="Spectral type search:").grid(row=3, column=0, sticky="w")
         ttk.Entry(f, textvariable=self.star_search_var).grid(row=3, column=1, sticky="ew")
         self.star_search_var.trace_add("write", lambda *_: self._refresh_star_list())
-        self.star_tree = ttk.Treeview(f, columns=("Name", "Type", "V"), show="headings", height=7)
-        for c, w in [("Name", 130), ("Type", 65), ("V", 60)]:
-            self.star_tree.heading(c, text=c); self.star_tree.column(c, width=w, anchor="center")
+        self.star_tree = ttk.Treeview(f, columns=("name", "spt", "bv"), show="headings", height=7)
+        self.star_tree.heading("name", text="Name")
+        self.star_tree.heading("spt", text="SpT")
+        self.star_tree.heading("bv", text="B-V")
+        self.star_tree.column("name", width=130, anchor="center")
+        self.star_tree.column("spt", width=65, anchor="center")
+        self.star_tree.column("bv", width=60, anchor="center")
+
         self.star_tree.grid(row=4, column=0, columnspan=2, sticky="ew", pady=3)
+        star_scroll = ttk.Scrollbar(f, orient="vertical", command=self.star_tree.yview)
+        star_scroll.grid(row=4, column=2, sticky="ns", pady=3)
+        self.star_tree.configure(yscrollcommand=star_scroll.set)
         self.star_tree.bind("<<TreeviewSelect>>", self._on_star_selected)
         self.star_status = tk.StringVar(value="Select one template")
         ttk.Label(f, textvariable=self.star_status, foreground="blue", wraplength=420, justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
@@ -424,8 +461,32 @@ class ETCGUI(tk.Tk):
 
     def _build_actions_column(self, holder):
         f = self._section(holder, "RUN ETC")
-        ttk.Button(f, text="Run ETC", command=self._run_etc).grid(row=0, column=0, sticky="ew", pady=2)
-        ttk.Button(f, text="Exit", command=self._on_exit).grid(row=1, column=0, sticky="ew", pady=(14, 2))
+#        ttk.Button(f, text="Run ETC", command=self._run_etc).grid(row=0, column=0, sticky="ew", pady=2)
+#        ttk.Button(f, text="Exit", command=self._on_exit).grid(row=1, column=0, sticky="ew", pady=(14, 2))
+#        tk.Button(
+#            f, text="Run ETC", command=self._run_etc,
+#            bg="#22a447", activebackground="#178134",
+#            fg="white", activeforeground="white",
+#        ).grid(row=0, column=0, sticky="ew", pady=2)
+
+        self.run_etc_button = tk.Button(
+            f,
+            text="Run ETC",
+            command=self._run_etc,
+            bg="#22a447",
+            activebackground="#178134",
+            fg="white",
+            activeforeground="white",
+        )
+        self.run_etc_button.grid(row=0, column=0, sticky="ew", pady=2)
+            
+        tk.Button(
+            f, text="Exit", command=self._on_exit,
+            bg="#c62828", activebackground="#8e1b1b",
+            fg="white", activeforeground="white",
+        ).grid(row=1, column=0, sticky="ew", pady=(14, 2))
+    
+
 
         f = self._section(holder, "OBSERVATORY STATUS")
         self.observatory_status_var = tk.StringVar(value="Updating current observatory status...")
@@ -450,12 +511,12 @@ class ETCGUI(tk.Tk):
         output_combo.bind("<<ComboboxSelected>>", lambda _event: self._convert_time_value())
         ttk.Button(f, text="Convert", command=self._convert_time_value).grid(row=3, column=0, columnspan=2, sticky="ew", pady=(3, 1))
         ttk.Label(f, text="").grid(row=4, column=0, sticky="w")
-        output = ttk.Entry(f, textvariable=self.time_convert_output_var, state="readonly", width=18)
-        output.grid(row=4, column=1, sticky="ew")
-        self.time_convert_status_var = tk.StringVar(value="UTC scale.")
-        ttk.Label(f, textvariable=self.time_convert_status_var, foreground="gray35", wraplength=220,
-                  justify="left").grid(row=5, column=0, columnspan=2, sticky="w", pady=(3, 0))
-        self._convert_time_value()
+        output = ttk.Entry(f, textvariable=self.time_convert_output_var, state="readonly", justify="left")
+        output.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(3,0))
+#        self.time_convert_status_var = tk.StringVar(value="UTC scale.")
+#        ttk.Label(f, textvariable=self.time_convert_status_var, foreground="gray35", wraplength=220,
+#                  justify="left").grid(row=5, column=0, columnspan=2, sticky="w", pady=(3, 0))
+#        self._convert_time_value()
 
         f = self._section(holder, "GEOGRAPHIC COORDINATES")
         self.dms_input_var = tk.StringVar(value="45 24 28.1 N 11 52 24.1 E")
@@ -466,10 +527,10 @@ class ETCGUI(tk.Tk):
             row=2, column=0, columnspan=2, sticky="ew", pady=(3, 1))
         ttk.Label(f, text="").grid(row=3, column=0, sticky="w")
         ttk.Entry(f, textvariable=self.dms_output_var, state="readonly", width=20).grid(row=3, column=1, sticky="ew")
-        self.dms_status_var = tk.StringVar(value="Accepts N/S/E/W, degree symbols, or signed D M S values.")
-        ttk.Label(f, textvariable=self.dms_status_var, foreground="gray35", wraplength=220,
-                  justify="left").grid(row=4, column=0, columnspan=2, sticky="w", pady=(3, 0))
-        self._convert_dms_coordinates()
+#       self.dms_status_var = tk.StringVar(value="Accepts N/S/E/W, degree symbols, or signed D M S values.")
+#       ttk.Label(f, textvariable=self.dms_status_var, foreground="gray35", wraplength=220,
+#                  justify="left").grid(row=4, column=0, columnspan=2, sticky="w", pady=(3, 0))
+#        self._convert_dms_coordinates()
 
         about = self._section(holder, "SPETC")
         ttk.Label(about, text="Spectro-Photometry\nExposure Time Calculator",
@@ -533,7 +594,7 @@ class ETCGUI(tk.Tk):
             else:
                 output = f"{parsed.jd:.8f}"
             self.time_convert_output_var.set(output)
-            self.time_convert_status_var.set("UTC scale. Output text can be selected and copied.")
+            #self.time_convert_status_var.set("UTC scale")
         except Exception as exc:
             self.time_convert_output_var.set("")
             self.time_convert_status_var.set(f"Conversion failed: {exc}")
@@ -584,7 +645,7 @@ class ETCGUI(tk.Tk):
         try:
             lat, lon = self._parse_dms_pair(self.dms_input_var.get())
             self.dms_output_var.set(f"LAT {lat:.4f} LON {lon:.4f}")
-            self.dms_status_var.set("Decimal degrees, with East longitude positive.")
+            #self.dms_status_var.set("East long>0")
         except Exception as exc:
             self.dms_output_var.set("")
             self.dms_status_var.set(f"Conversion failed: {exc}")
@@ -1042,12 +1103,29 @@ class ETCGUI(tk.Tk):
         canvas.create_text(right, height - 10, text=f"{xmax:.0f} Å", anchor="e", fill="#555555", font=("TkDefaultFont", 8))
         canvas.create_text(3, top, text="log Fλ", anchor="nw", fill="#555555", font=("TkDefaultFont", 8))
 
+
+    def _set_etc_ready(self, ready, message=""):
+        self.etc_ready = bool(ready)
+    
+        if hasattr(self, "run_etc_button"):
+            self.run_etc_button.configure(
+                state="normal" if self.etc_ready else "disabled"
+            )
+    
+        if message:
+            self.response_preview_status.set(message)
+
+
     def _update_combined_response_preview(self):
         """Show the display-only system response, zero-filled outside coverage."""
         if not hasattr(self, "response_preview_section"):
             return
         ready = self.filter_resp_data is not None and self.star_spec is not None
         if not ready:
+            self._set_etc_ready(
+                False,
+                "Select an observing filter and a stellar template."
+            )
             self.response_preview_section.pack_forget()
             return
         try:
@@ -1068,6 +1146,47 @@ class ETCGUI(tk.Tk):
                                                   "instrument throughput curve", clip=(0.0, 1.0))
                           if self.throughput_curve is not None else np.ones_like(wave))
             detected = source * response * qe * throughput * earth * max(float(self.eff_var.get()), 0.0) * wave
+
+            # The reference filter defines the user-provided magnitude.
+            # It must overlap the template with positive flux.
+            reference_profile = fcat.load_filter_profile(
+                self.filter_resp_data,
+                self.reference_band_var.get(),
+                self.mag_system_var.get(),
+            )
+            ref_wave = np.asarray(reference_profile.transmission[:, 0], dtype=float)
+            ref_response = np.clip(
+                np.asarray(reference_profile.transmission[:, 1], dtype=float),
+                0.0, 1.0,
+            )
+            ref_source = interpolate_zero_filled(
+                ref_wave,
+                self.star_spec,
+                "template spectrum",
+            )
+            
+            reference_signal = np.trapezoid(
+                np.clip(ref_source, 0.0, None) * ref_response,
+                ref_wave,
+            )
+            
+            detected_signal = np.trapezoid(
+                np.clip(detected, 0.0, None),
+                wave,
+            )
+            
+            if not np.isfinite(reference_signal) or reference_signal <= 0.0:
+                raise ValueError(
+                    "The template has no positive flux in the selected reference "
+                    "magnitude filter. Select another template or reference filter."
+                )
+            
+            if not np.isfinite(detected_signal) or detected_signal <= 0.0:
+                raise ValueError(
+                    "The selected template, observing filter, QE, atmosphere and "
+                    "throughput produce zero detected target flux."
+                )
+        
             maximum = float(np.nanmax(detected))
             normalized = detected / maximum if np.isfinite(maximum) and maximum > 0 else np.zeros_like(detected)
             ax = self.response_preview_axis
@@ -1087,17 +1206,30 @@ class ETCGUI(tk.Tk):
                 "Template × filter × QE × optics × zenith Earth atmosphere. Missing coverage is zero.")
             if not self.response_preview_section.winfo_manager():
                 self.response_preview_section.pack(fill="x", padx=5, pady=4, before=self.instrument_profile_section)
+            self._set_etc_ready(True)
+#        except Exception as exc:
+#            self.response_preview_status.set(f"System response unavailable: {exc}")
+#            if not self.response_preview_section.winfo_manager():
+#                self.response_preview_section.pack(fill="x", padx=5, pady=4, before=self.instrument_profile_section)
         except Exception as exc:
-            self.response_preview_status.set(f"System response unavailable: {exc}")
+            self._set_etc_ready(False, f"Cannot run ETC: {exc}")
+            self.response_preview_axis.clear()
+            self.response_preview_canvas.draw_idle()
+        
             if not self.response_preview_section.winfo_manager():
-                self.response_preview_section.pack(fill="x", padx=5, pady=4, before=self.instrument_profile_section)
+                self.response_preview_section.pack(
+                    fill="x", padx=5, pady=4,
+                    before=self.instrument_profile_section,
+                )
+    
+
 
     def _refresh_star_list(self):
         if not hasattr(self, "star_tree"): return
         self.star_tree.delete(*self.star_tree.get_children()); self.star_id_map = {}
         query = self.star_search_var.get().strip() or None
-        for rec in scat.search_stars(self.star_catalog, name_query=query):
-            item = self.star_tree.insert("", "end", values=(rec.name, rec.spt, f"{rec.mv0:.2f}"))
+        for rec in scat.search_stars(self.star_catalog, spt_prefix=query):
+            item = self.star_tree.insert("", "end", values=(rec.name, rec.spt, f"{rec.bv0:.2f}"))
             self.star_id_map[item] = rec
 
     def _on_star_selected(self, *_):
@@ -1532,10 +1664,18 @@ class ETCGUI(tk.Tk):
             else:
                 self.status_var.set("Complete")
             self._save_config()
+#        except Exception as exc:
+#            self.status_var.set("Error")
+#            messagebox.showerror("ETC error", f"{exc}\n\n{traceback.format_exc()}")
+
+        except ValueError as exc:
+            self.status_var.set("Error")
+            messagebox.showerror("Cannot run ETC", str(exc))
+        
         except Exception as exc:
             self.status_var.set("Error")
-            messagebox.showerror("ETC error", f"{exc}\n\n{traceback.format_exc()}")
-
+            messagebox.showerror("Unexpected ETC error", str(exc))
+    
     def _ensure_results_window(self):
         if self.results_window is not None and self.results_window.winfo_exists():
             return
@@ -1553,7 +1693,8 @@ class ETCGUI(tk.Tk):
         info_frame = ttk.Frame(tabs)
         tabs.add(result_frame, text="Selected-time result")
         tabs.add(time_frame, text="Time series")
-        tabs.add(info_frame, text="Assumptions / visibility")
+        #tabs.add(info_frame, text="Assumptions / visibility")
+        #tabs.hide(info_frame)
 
         columns = ("X", "Source e-/s", "Sky e-/s", "S/N", "Peak ADU", "Sat")
         self.tree = ttk.Treeview(result_frame, columns=columns, show="headings")

@@ -22,7 +22,7 @@ from observing_conditions import (differential_refraction_arcsec, digitization_n
                                   scintillation_variance_e2)
 from astropy.constants import h, c
 from ephemeris import site_pressure_hpa, site_temperature_c
-from spectral_utils import require_coverage, interpolate_checked
+from spectral_utils import require_coverage, interpolate_checked, interpolate_zero_filled
 
 
 def grating_dispersion_aa_per_pixel(lines_per_mm, grating_to_sensor_mm, pixel_size_um,
@@ -138,8 +138,8 @@ class SpectroscopyETC:
             template_mv0, visual_band, visual_zero_point_jy,
             reference_detector_type, visual_detector_type)
         source_curve = np.column_stack((spec_wave.to_value(u.AA), spec_flam.to_value(spec_flam.unit)))
-        require_coverage(wave.to_value(u.AA), source_curve, "template spectrum")
-        source_flam = interpolate_checked(wave.to_value(u.AA), source_curve, "template spectrum") * spec_flam.unit
+        #require_coverage(wave.to_value(u.AA), source_curve, "template spectrum")
+        source_flam = interpolate_zero_filled(wave.to_value(u.AA), source_curve, "template spectrum") * spec_flam.unit
         qe = interpolate_checked(wave.to_value(u.AA), qe_curve, "QE curve", clip=(0.0, 1.0))
         if observing_filter is None:
             observing_transmission = np.ones(wave.size)

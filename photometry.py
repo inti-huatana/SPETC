@@ -15,7 +15,7 @@ from etc_physics import (as_angstrom_curve, calibrated_template_magnitude, elect
                          magnitude_f_lambda, psf_encircled_energy, psf_slit_throughput,
                          snr, synthetic_magnitude)
 from observing_conditions import digitization_noise_e, scintillation_variance_e2
-from spectral_utils import require_coverage, interpolate_checked
+from spectral_utils import require_coverage, interpolate_checked, interpolate_zero_filled
 
 
 class PhotometryETC:
@@ -44,17 +44,17 @@ class PhotometryETC:
         if active.sum() < 2:
             raise ValueError("Photometric observing filter has no positive transmission samples.")
         wave, transmission = wave[active], transmission[active]
-        qe = interpolate_checked(wave.to_value(u.AA), qe_curve, "QE curve", clip=(0.0, 1.0))
+        qe = interpolate_zero_filled(wave.to_value(u.AA), qe_curve, "QE curve", clip=(0.0, 1.0))
 
         reference_filter = observing_filter if reference_filter is None else reference_filter
         spec_wave, spec_flam = calibrated_template_magnitude(
             star_spec, target_mag, reference_filter, target_zero_point_jy,
             template_mv0, visual_band, visual_zero_point_jy,
             reference_detector_type, visual_detector_type)
-        require_coverage(wave.to_value(u.AA),
-                         np.column_stack((spec_wave.to_value(u.AA), spec_flam.to_value(spec_flam.unit))),
-                         "template spectrum")
-        target_flam = interpolate_checked(wave.to_value(u.AA),
+        #require_coverage(wave.to_value(u.AA),
+        #                 np.column_stack((spec_wave.to_value(u.AA), spec_flam.to_value(spec_flam.unit))),
+        #                 "template spectrum")
+        target_flam = interpolate_zero_filled(wave.to_value(u.AA),
                                           np.column_stack((spec_wave.to_value(u.AA), spec_flam.to_value(spec_flam.unit))),
                                           "template spectrum") * spec_flam.unit
         total_source_rate = electron_rate(wave, target_flam, transmission, qe, self.telescope, self.atmosphere)
@@ -63,9 +63,17 @@ class PhotometryETC:
             observing_zero_point_jy, observing_detector_type)
         zero_rate = electron_rate(wave, magnitude_f_lambda(wave, observing_zero_point_jy), transmission, qe,
                                   self.telescope, self.atmosphere)
-        instrumental_response_mag = float(-2.5 * np.log10(
-            total_source_rate.to_value(1 / u.s) / zero_rate.to_value(1 / u.s)))
-
+        #instrumental_response_mag = float(-2.5 * np.log10(
+        #    total_source_rate.to_value(1 / u.s) / zero_rate.to_value(1 / u.s)))
+        source_rate_value = total_source_rate.to_value(1 / u.s)
+        zero_rate_value = zero_rate.to_value(1 / u.s)
+        
+        instrumental_response_mag = (
+            float(-2.5 * np.log10(source_rate_value / zero_rate_value))
+            if source_rate_value > 0 and zero_rate_value > 0
+            else np.nan
+        )
+    
         seeing = float(self.atmosphere["seeing_arcsec"])
         psf_model = str(self.atmosphere.get("psf_model", "gaussian"))
         moffat_beta = float(self.atmosphere.get("moffat_beta", 2.5))

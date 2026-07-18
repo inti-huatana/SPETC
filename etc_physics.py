@@ -10,7 +10,7 @@ import math
 import numpy as np
 import astropy.units as u
 from astropy.constants import c, h
-from spectral_utils import as_curve, require_coverage, interpolate_checked
+from spectral_utils import as_curve, require_coverage, interpolate_checked, interpolate_zero_filled
 
 
 FLAM_UNIT = u.erg / (u.s * u.cm**2 * u.AA)
@@ -153,7 +153,7 @@ def atmospheric_transmission(wavelength, atmosphere):
     curve = atmosphere.get("transmission_curve")
     if curve is None:
         return np.ones(wavelength.size)
-    zenith = interpolate_checked(wavelength.to_value(u.AA), curve, "atmospheric transmission curve", clip=(0.0, 1.0))
+    zenith = interpolate_zero_filled(wavelength.to_value(u.AA), curve, "atmospheric transmission curve", clip=(0.0, 1.0))
     return np.clip(zenith, 0.0, 1.0) ** airmass
 
 

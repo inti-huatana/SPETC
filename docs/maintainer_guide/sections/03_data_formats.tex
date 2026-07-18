@@ -1,0 +1,39 @@
+\section{On-disk formats}
+
+\subsection{\code{data/} directory}
+
+\begin{description}
+  \item[\code{interpola.db.csv}] Header line then comma-separated rows:
+    \code{nrow, Vmag, B-V, name, spt, filename}; \code{filename} is
+    relative to \code{data/} (subdirectories allowed, e.g.\
+    \code{bpgs/bpgs\_92.ascii}). \code{Vmag} is the CALSPEC visual
+    magnitude represented by the file ($m_{v0}$).
+  \item[template spectra] Two-column ASCII: wavelength [\AA{}], calibrated
+    $\flam$. Non-finite and non-positive rows are dropped; wavelengths are
+    sorted and deduplicated on load.
+  \item[\code{qe.dat}] Two-column wavelength/QE; the wavelength unit is
+    declared in the configuration (\code{Angstrom}/\code{nm}/\code{um}).
+  \item[\code{filters.list}] One entry per line naming SVO profiles;
+    entries with or without the \code{filters/} prefix and \code{.xml}
+    suffix all resolve. Each logical filter needs \code{<name>\_Vega} and
+    \code{<name>\_AB} VOTables carrying \code{MagSys}, \code{ZeroPoint}
+    [Jy], \code{DetectorType}, \code{WavelengthUnit} and the transmission
+    table. \code{BLANK.xml} (unity 3000--26000 \AA{}, AB) is optional and
+    auto-detected.
+  \item[\code{earth\_atmospheric\_transmission.fits}] Optional; accepted
+    layouts in Sect.~2 (\code{spectral\_utils}).
+\end{description}
+
+\subsection{Configuration and profiles}
+
+\code{etc\_user\_config.json} is a flat string-to-string map of every
+registered GUI variable plus \code{schema\_version}; it is rewritten after
+each successful run and on exit. Instrument profiles are the same keys
+restricted to the instrument subset (\code{\_instrument\_profile\_keys}),
+saved with relative copies of the QE, response and slit-$R$ curves beside
+them. \code{etc\_sites.json} holds user sites
+(\code{name/lat/lon/elev/utc\_offset\_h/timezone/sky\_ab\_mag\_arcsec2});
+\code{observatories.json} the built-in presets. When adding a new
+persistent setting, register it with \code{self.\_var("key", default)} ---
+persistence is automatic; bump \code{schema\_version} only for
+incompatible changes.

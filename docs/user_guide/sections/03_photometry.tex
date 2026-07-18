@@ -1,0 +1,40 @@
+\section{Photometry step by step}
+
+\subsection{Point sources}
+
+\begin{enumerate}
+  \item Set \textsf{Source geometry} to \code{point}.
+  \item Choose the aperture radius. As a rule of thumb $1.5\times$ the
+        seeing FWHM captures $\sim$95\% of a Moffat profile while limiting
+        sky noise; the ETC applies the exact encircled-energy correction,
+        so any radius gives a correct answer.
+  \item Enter the target magnitude and its reference filter and system
+        (Vega default; AB available).
+  \item Run. The S/N-versus-time curve shows the whole night; the red
+        marker is your selected time.
+\end{enumerate}
+
+For bright stars do not be surprised that the S/N stops growing with
+brightness at a few $\times10^3$: atmospheric scintillation sets a ceiling
+per exposure that no photon count can beat. Stack short frames to go
+beyond it.
+
+\subsection{Extended sources (galaxies, nebulae, planets)}
+
+Set \textsf{Source geometry} to \code{extended} and give the source area in
+arcsec$^2$ (e.g.\ a $2'\times1'$ galaxy $\approx 7200$; Jupiter
+$\approx1500$ at opposition). Keep entering the \emph{integrated} magnitude:
+the ETC spreads it uniformly over the stated area, so the aperture collects
+the corresponding area fraction and pixel saturation is judged on the
+surface brightness, which is what actually saturates on a resolved object.
+The approximation is intended for sources clearly larger than the seeing
+disc.
+
+\subsection{Target S/N mode}
+
+Enter a value in \textsf{Target S/N} to invert the calculation: the ETC
+solves for the exposure in closed form, including read noise, and the
+time-series plot switches to required exposure versus time. If the required
+exposure would saturate the brightest pixel, the result is flagged and the
+maximum unsaturated single-frame exposure is reported --- split the
+integration into shorter frames and budget one read-noise term per frame.

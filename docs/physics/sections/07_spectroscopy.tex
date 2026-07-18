@@ -1,0 +1,72 @@
+\section{Spectroscopic ETC}
+\label{sec:spectroscopy}
+
+All spectroscopic quantities are per resolution element. The wavelength grid
+is logarithmic at constant $R$ in slit mode, or linear with the resolution
+element $\Delta\lambda = \mathcal{D}\,\ell$ in slitless mode
+($\mathcal{D}$ = dispersion in \si{\angstrom}/pixel, $\ell$ = LSF FWHM in
+pixels). Source and sky rates follow Eq.~(\ref{eq:rate}) restricted to each
+element, and the S/N applies Eq.~(\ref{eq:snr}) with
+$N_{\rm pix}$ = (dispersion pixels per element) $\times$ (spatial extraction
+pixels).
+
+\subsection{Slit mode}
+\label{sec:slit}
+
+The extracted fraction is the product of two couplings of
+Eq.~(\ref{eq:slit}): the slit width across dispersion and the finite
+extraction height along it. When the slit is \emph{not} at the parallactic
+angle of Eq.~(\ref{eq:parallactic}), the differential refraction
+$\Delta R(\lambda)$ of Eq.~(\ref{eq:dr}) decentres the PSF in the slit per
+wavelength; \spetc{} applies the worst-case geometry (full offset
+perpendicular to the slit), reproducing the classical
+\citet{filippenko1982} blue-end losses (Fig.~\ref{fig:dispersion}). A
+measured slit-width/resolving-power curve, when supplied, overrides the
+nominal $R$.
+
+\subsection{Slitless mode and the Star Analyser}
+\label{sec:slitless}
+
+In slitless spectroscopy the resolution element is set by the image quality,
+not by a slit: $\ell = \sqrt{(s/p)^2 + \ell_0^2 + \ell_{\rm AD}^2}$ combines
+seeing, the intrinsic grating LSF and the atmospheric-dispersion smear
+within one element. The sole extraction aperture is the cross-dispersion
+height; the sky per element covers (dispersion pixels $\times$ extraction
+height).
+
+For a transmission grating in the converging beam --- the Star Analyser
+100/200 geometry --- the first-order deviation is
+$x \simeq L\,m\,n\,\lambda$, so the dispersion at the detector is
+\begin{equation}
+  \mathcal{D} \;=\; \frac{10^{4}\, p_{\mu m}}{L_{\rm mm}\; n_{\rm mm}\; m}
+  \quad [\si{\angstrom}/\text{pixel}],
+  \label{eq:sa}
+\end{equation}
+with $n$ the groove density (100 or 200 mm$^{-1}$), $L$ the
+grating-to-sensor distance and $m=1$. An SA100 at $L=\SI{42}{mm}$ on
+\SI{4.63}{\micro\metre} pixels gives $\mathcal{D} = 11.0$
+\si{\angstrom}/pixel, matching its published calibration; an SA200 at the
+same distance gives half that. An optional scalar first-order grating
+efficiency multiplies source and sky alike. Under $2.5''$ seeing the
+effective resolving power is $R \simeq 100$--200
+(Fig.~\ref{fig:sa100}), which is why the mode remains flagged
+\emph{experimental} until validated against a calibrated instrument.
+
+\begin{figure}
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_07_sa100.png}
+  \caption{Star Analyser 100 predictions from the released code for a
+  200-mm f/5 telescope with a typical CMOS camera: detected source rate
+  (left) and S/N per resolution element in \SI{120}{s} (right) for
+  $V = 6, 8, 10$ flat-spectrum targets.}
+  \label{fig:sa100}
+\end{figure}
+
+\subsection{Time series and reverse solving}
+
+Planning series evaluate the S/N reference wavelength bin at every time
+sample of the visibility window (full spectra only at the selected time and
+the plot-slider samples), with the sky model, airmass, refraction and
+parallactic angle recomputed per sample. Target-S/N requests use the
+closed-form solver of Sect.~\ref{sec:noise} per element and are checked
+against the saturation limit rather than being silently declared feasible.

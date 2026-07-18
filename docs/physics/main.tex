@@ -1,0 +1,40 @@
+\documentclass[11pt, a4paper]{article}
+\input{preamble}
+
+\title{\spetc{} v10: Physics of the Spectro-Photometric\\Exposure Time Calculator}
+\author{Mauro Barbieri\\\small\texttt{mauro.barbieri@pm.me}}
+\date{2007--2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\spetc{} is an exposure time calculator (ETC) for ground-based broad-band
+photometry and low- to high-resolution spectroscopy, descended from the
+original Fortran \code{interpola\_spad} chain and rewritten in Python on
+\code{astropy}. This document derives every physical relation the code
+evaluates: the radiometric chain from a CALSPEC-calibrated template spectrum
+to detected photo-electrons; synthetic photometry in the SVO convention;
+atmospheric extinction, refraction, airmass and differential dispersion; the
+position-dependent night-sky model with van Rhijn airglow, zodiacal light,
+integrated starlight and Krisciunas--Schaefer moonlight; Gaussian and Moffat
+point-spread functions; the complete noise budget including scintillation and
+quantization; slit and slitless (Star Analyser) spectroscopy; and the
+treatment of extended sources. Expected performance and the known limits of
+validity are summarized.
+\end{abstract}
+
+\tableofcontents
+
+\input{sections/01_introduction}
+\input{sections/02_radiometry}
+\input{sections/03_atmosphere}
+\input{sections/04_sky}
+\input{sections/05_psf}
+\input{sections/06_photometry}
+\input{sections/07_spectroscopy}
+\input{sections/08_expectations}
+
+\bibliography{references}
+
+\end{document}

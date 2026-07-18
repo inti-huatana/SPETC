@@ -1,0 +1,47 @@
+\section{Point-spread function and aperture coupling}
+\label{sec:psf}
+
+The seeing-limited PSF is selectable between a circular Gaussian and a
+circular \citet{moffat1969} profile
+\begin{equation}
+  I(r) \propto \Big(1 + \frac{r^2}{\alpha^2}\Big)^{-\beta},
+  \qquad
+  \alpha = \frac{\rm FWHM}{2\sqrt{2^{1/\beta}-1}},
+\end{equation}
+whose power-law wings ($\beta \simeq 2.5$--$4.7$; the Gaussian is the
+$\beta\to\infty$ limit) reproduce real seeing profiles that a Gaussian
+underestimates.
+
+\paragraph{Encircled energy.} For a circular aperture of radius $r$,
+\begin{equation}
+  \mathrm{EE}_{\rm Gauss}(r) = 1 - e^{-r^2/2\sigma^2},
+  \qquad
+  \mathrm{EE}_{\rm Moffat}(r) = 1 - \Big(1+\frac{r^2}{\alpha^2}\Big)^{1-\beta}.
+\end{equation}
+
+\paragraph{Slit coupling.} The flux through an infinite slit of width $w$
+whose centre is displaced by $\delta$ from the PSF centroid uses the
+one-dimensional marginal profile. For the Gaussian this is the usual error
+function; for the circular Moffat the marginal is \emph{exactly} a Student-$t$
+distribution with $\nu = 2\beta-2$ degrees of freedom and scale
+$\alpha/\sqrt{\nu}$, so
+\begin{equation}
+  T(w,\delta) \;=\;
+  F_\nu\!\Big(\frac{w/2-\delta}{\alpha/\sqrt{\nu}}\Big) -
+  F_\nu\!\Big(\frac{-w/2-\delta}{\alpha/\sqrt{\nu}}\Big),
+  \label{eq:slit}
+\end{equation}
+with $F_\nu$ the Student-$t$ CDF --- no numerical integration is required.
+The same expression with $w$ equal to one pixel gives the central-pixel
+fraction used for saturation prediction, as the separable product of the
+dispersion and spatial couplings. Figure~\ref{fig:psf} compares the models.
+
+\begin{figure}
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_03_psf.png}
+  \caption{Left: encircled energy versus aperture radius in units of the
+  seeing FWHM. Right: slit throughput of a slit of one seeing-FWHM width as
+  the PSF is decentred, Eq.~(\ref{eq:slit}); the Moffat wings both lower the
+  centred coupling and soften the decentring penalty.}
+  \label{fig:psf}
+\end{figure}

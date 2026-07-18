@@ -1,0 +1,48 @@
+\section{Modification recipes}
+
+\subsection{Add a filter}
+Download the \code{\_Vega} and \code{\_AB} VOTables from the SVO Filter
+Profile Service, drop them into \code{data/filters/} and append the two
+names to \code{data/filters.list}. Nothing else: the selector list is
+rebuilt at start-up and all metadata (zero point, pivot, detector type)
+comes from the files.
+
+\subsection{Add a template spectrum}
+Place the two-column ASCII under \code{data/} and append a row to
+\code{interpola.db.csv} with its row count, the visual magnitude the file
+is calibrated to ($m_{v0}$; 0 for a visual-zero distribution), $B-V$, name,
+spectral type and relative path.
+
+\subsection{Add a site}
+Prefer the GUI (\textsf{Save current site}); or edit
+\code{etc\_sites.json}. \code{observatories.json} is for shipped defaults
+only.
+
+\subsection{Add a noise term}
+Implement the variance in \code{observing\_conditions.py} as a pure
+function returning e$^{-2}$; add it to the \code{extra\_variance\_e2} sums
+in \code{photometry.py} and \code{spectroscopy.py}; expose any new inputs
+through \code{\_atmosphere\_dict} in the GUI; extend
+\code{tests/test\_spectral\_pipeline.py} with an order-of-magnitude check;
+document it in the physics document's Table~3.
+
+\subsection{Add a PSF model}
+Extend \code{psf\_encircled\_energy} and \code{psf\_slit\_throughput} in
+\code{etc\_physics.py} with the new \code{psf\_model} branch (the slit
+coupling needs the 1-D marginal CDF, analytic or numeric), add the name to
+the GUI combobox, and add a regression test comparing it against the
+Gaussian in a limit.
+
+\subsection{Change the sky model}
+All component physics lives in \code{sky\_brightness.py}; the
+normalization/blending policy in \code{sky\_background.py}; the GUI merge
+in \code{\_sky\_models\_for\_track}. A future spectral sky model should
+populate the existing \code{spectral\_sky\_f\_lambda} key of the sky-model
+dictionary --- the spectroscopy engine already consumes it.
+
+\subsection{Coding rules}
+Match the existing style: physics as pure functions with explicit units,
+engines free of Tk, no silent fallbacks (raise \code{ValueError} with the
+offending numbers), constants named after their paper, and every new
+physical relation cited to its reference in a docstring and covered by a
+test pinned to a published value.

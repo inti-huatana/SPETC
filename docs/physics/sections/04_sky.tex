@@ -1,0 +1,105 @@
+\section{Night-, twilight- and day-sky model}
+\label{sec:sky}
+
+\subsection{Dark sky}
+
+The dark-sky normalization is the broad-band $U$--$K$ surface-brightness
+table of Table~\ref{tab:sky} (from the ING model of
+\citealt{bennellison1998}), corrected for the pointing and epoch through the
+S10 component budget
+\begin{equation}
+  q_3 \;=\; q_{\rm air}\,V(z) \;+\; q_{\rm zod}(|\beta|) \;+\;
+            q_\ast(|b|),
+\end{equation}
+normalized to the dark reference composition $q_{\rm ref} = 145 + 60$ S10.
+The components are:
+\begin{itemize}
+\item \textbf{Airglow}: $q_{\rm air} = 145 + 130\,(a-0.8)/1.2$ S10, where the
+  solar-cycle activity $a \in [0.8, 2.0]$ is interpolated between the
+  tabulated solar minima. The line-of-sight enhancement is the van Rhijn
+  path-length law \citep{vanrhijn1921} for an emitting layer at
+  $\hat h = \SI{90}{km}$,
+  \begin{equation}
+    V(z) = \Big[1 - \Big(\tfrac{R_\oplus}{R_\oplus+\hat h}\sin z\Big)^2\Big]^{-1/2},
+    \label{eq:vanrhijn}
+  \end{equation}
+  which is sub-linear in airmass and bounded ($V \simeq 6$) at the horizon
+  (Fig.~\ref{fig:skypos}, right).
+\item \textbf{Zodiacal light}: $q_{\rm zod} = 140 - 90 \sin|\beta|$ S10 for
+  $|\beta| < 60^\circ$, else 60 S10 --- symmetric about the ecliptic by
+  construction.
+\item \textbf{Integrated starlight}: $q_\ast = 100\,e^{-|b|/10^\circ}$ S10.
+\end{itemize}
+The field's ecliptic and galactic latitudes are computed from the entered
+ICRS coordinates with \code{astropy}; the sky is therefore genuinely
+position-dependent (Fig.~\ref{fig:skypos}, left).
+
+\begin{table}
+\centering
+\caption{Built-in broad-band sky data ($U$--$K$): dark-sky surface
+brightness, extinction coefficient, Vega zero point and
+Krisciunas--Schaefer lunar colour factor.}
+\label{tab:sky}
+\begin{tabular}{lccccc}
+\toprule
+Band & $\lambda$ [\si{\angstrom}] & $\mu_{\rm dark}$ [mag/$''^2$] &
+$k$ [mag/X] & $Z_\nu^{\rm Vega}$ [Jy] & lunar factor \\
+\midrule
+$U$ &  3650 & 22.0 & 0.550 & 1810 &  2.00 \\
+$B$ &  4450 & 22.7 & 0.250 & 4260 &  1.60 \\
+$V$ &  5510 & 21.9 & 0.150 & 3640 &  2.40 \\
+$R$ &  6580 & 21.0 & 0.090 & 3080 &  3.00 \\
+$I$ &  8060 & 20.0 & 0.060 & 2550 &  5.90 \\
+$Z$ & 10000 & 18.8 & 0.050 & 2250 &  8.94 \\
+$J$ & 12500 & 16.1 & 0.100 & 1594 & 13.06 \\
+$H$ & 16500 & 14.7 & 0.110 & 1024 & 18.09 \\
+$K$ & 22000 & 12.5 & 0.070 &  667 & 24.04 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_04_sky_position.png}
+  \caption{Left: zenith dark-sky brightening relative to the tabulated
+  values as a function of ecliptic latitude, for three galactic latitudes
+  (solar minimum). Right: van Rhijn airglow enhancement versus the linear
+  $\sec z$ scaling used before v10.}
+  \label{fig:skypos}
+\end{figure}
+
+\subsection{Moonlight}
+
+Moonlight follows \citet{krisciunas1991}. The lunar illuminance for phase
+angle $\alpha$ (0 = full Moon) is
+$I^\ast = 10^{-0.4(3.84 + 0.026|\alpha| + 4\times10^{-9}\alpha^4)}$, and the
+scattering function at Moon--target separation $\rho$ is
+\begin{equation}
+  f(\rho) \;=\; 10^{5.36}\big(1.06 + \cos^2\rho\big) \;+\;
+                 10^{6.15 - \rho/40^\circ}.
+  \label{eq:ks}
+\end{equation}
+The surface brightness in nanoLambert is
+$B_{\rm moon} = I^\ast f(\rho)\,
+10^{-0.4kX_{\rm m}}\big(1 - 10^{-0.4kX}\big)$, converted to S10 and
+distributed over the nine bands with the lunar colour factors of
+Table~\ref{tab:sky}. Equation~(\ref{eq:ks}) corrects a long-standing
+transcription error in which the constant $10^{5.36}$ appeared inside the
+exponent; the two forms diverge by more than three orders of magnitude
+within $30^\circ$ of the Moon (Fig.~\ref{fig:ks}).
+
+\begin{figure}
+  \centering
+  \includegraphics[width=0.62\textwidth]{figures/fig_01_moon_scattering.png}
+  \caption{The \citet{krisciunas1991} scattering function (solid) and the
+  misparenthesized variant present before v10 (dashed).}
+  \label{fig:ks}
+\end{figure}
+
+\subsection{Twilight and daylight}
+
+Between Sun altitudes of $-18^\circ$ and $0^\circ$ the dark and daylight
+skies are blended linearly in flux. Above the horizon the $V$-band daylight
+surface brightness of \citet{weaver1947} is used, mapped to other bands with
+the dark-sky colour of Table~\ref{tab:sky}. Both regimes are broad-band
+approximations, clearly flagged as such in the user interface.

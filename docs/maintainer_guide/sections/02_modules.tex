@@ -1,0 +1,88 @@
+\section{Module reference}
+
+\subsection{\code{spectral\_utils.py}}
+Unit-aware spectral curves. \code{SpectralCurve} (frozen dataclass, strictly
+increasing \AA{} grid); \code{make\_curve}/\code{as\_curve} validate and
+convert; \code{require\_coverage} and \code{interpolate\_checked} enforce
+the no-extrapolation rule; \code{interpolate\_zero\_filled} exists only for
+diagnostic plots; \code{load\_two\_column\_curve} reads whitespace/comma
+text files; \code{load\_fits\_transmission\_curve} reads atmospheric FITS
+tables (direct transmission columns, Paranal \code{EXTINCTION}
+mag/airmass converted once, or a $2\times N$ image with \code{CUNIT1}).
+
+\subsection{\code{observing\_conditions.py}}
+Pure functions, no state: \code{scintillation\_fractional\_rms} /
+\code{scintillation\_variance\_e2} (Young 1967 law),
+\code{digitization\_noise\_e} ($g/\sqrt{12}$),
+\code{refractive\_index\_minus\_one} and
+\code{differential\_refraction\_arcsec} (Filippenko 1982).
+
+\subsection{\code{etc\_physics.py}}
+\code{magnitude\_f\_lambda} (zero-point $\flam$), \code{synthetic\_magnitude}
+(SVO photon/energy convention), \code{calibrated\_template\_magnitude}
+(CALSPEC $m_{v0}$ + synthetic colour scaling), \code{collecting\_area},
+\code{atmospheric\_transmission} ($T^X$), \code{instrument\_transmission},
+\code{electron\_rate} (Eq.~4 of the physics document),
+\code{psf\_encircled\_energy} and \code{psf\_slit\_throughput}
+(Gaussian/Moffat; the Moffat slit coupling is the Student-$t$ CDF with
+$\nu = 2\beta-2$), and \code{snr} (CCD equation with an
+\code{extra\_variance\_e2} hook). The Gaussian-only wrappers
+\code{gaussian\_encircled\_energy} and \code{slit\_throughput} are kept for
+backward compatibility.
+
+\subsection{\code{sky\_brightness.py} / \code{sky\_background.py}}
+\code{sky\_brightness.py} owns the shared constants (solar minima, $U$--$K$
+tables, lunar factors) and the component physics:
+\code{van\_rhijn\_factor}, \code{zodiacal\_s10}, \code{starlight\_s10},
+\code{dark\_sky\_position\_correction\_mag},
+\code{moonlight\_scattering\_function} and the nine-band
+\code{sky\_brightness\_total}. \code{sky\_background.py} supplies the
+observed normalization \code{sky\_magnitude\_vega}: dark table +
+position/van-Rhijn correction below $-18^\circ$ Sun altitude, Weaver
+daylight above the horizon, linear flux blend in twilight. The GUI stitches
+them: the ING normalization sets the level, the Benn--Ellison/K\&S bands set
+the colour and the Moon term.
+
+\subsection{\code{ephemeris.py}}
+\code{compute\_target\_track} is the workhorse: refraction-corrected
+\code{AltAz} frames (\code{site\_pressure\_hpa}/\code{site\_temperature\_c}
+ISA at elevation), \code{pickering\_airmass} above the $5^\circ$ cutoff,
+Sun/Moon positions, Moon phase and separation, and
+\code{parallactic\_angle\_deg} per sample. Parsers and converters
+(\code{parse\_ra}, sexagesimal formatters, frame converters) and the
+\code{find\_*} rise/set helpers complete the module.
+
+\subsection{\code{photometry.py} / \code{spectroscopy.py}}
+Each exposes one class with one compute method taking the four-dictionary
+context plus per-call arguments. \code{PhotometryETC.compute\_photometry\_single}
+handles point and extended geometry, the full noise budget and saturation;
+\code{SpectroscopyETC.compute\_spectroscopy} handles slit (PSF +
+dispersion-offset losses) and slitless (grating physics via module function
+\code{grating\_dispersion\_aa\_per\_pixel}) modes and returns a DataFrame
+whose \code{attrs} carry per-run metadata (mode, $R$, sky brightness, noise
+terms, dispersion).
+
+\subsection{\code{detector.py}, \code{solvers.py}}
+\code{Detector} stores pixel size, gain, full well, bit depth, read noise,
+dark current; \code{counts\_to\_adu} and \code{saturation\_flag}
+(\code{FULL\_WELL}/\code{ADC}/\code{BOTH}/\code{NONE}).
+\code{solvers.exposure\_time\_for\_snr} inverts the CCD equation in closed
+form.
+
+\subsection{\code{star\_catalog.py}, \code{filter\_catalog.py},
+\code{config\_manager.py}}
+Catalogue parsing (\code{interpola.db.csv} $\to$ \code{StarRecord};
+spectrum loading with monotonicity cleanup), SVO VOTable parsing
+(\code{FilterProfile} with zero point, \code{DetectorType}, metadata in
+\AA{}; \code{BLANK} special-cased to the AB scale), and the built-in
+observatory presets from \code{observatories.json}.
+
+\subsection{\code{etc\_gui.py}, \code{matplotlib\_plots.py}}
+The Tk application: \code{\_var(key, default)} registers every setting for
+automatic JSON persistence; \code{\_run\_etc} orchestrates; the helper
+methods \code{\_atmosphere\_dict}, \code{\_source\_geometry\_kwargs},
+\code{\_sky\_models\_for\_track}, \code{\_photometry\_time\_series},
+\code{\_spectroscopy\_time\_series} and
+\code{\_build\_time\_series\_dataframe} are the seams to modify first.
+\code{matplotlib\_plots.ETCPlotWindow} renders the metric/altitude/sky-path
+(and spectrum) panels with the manual time slider.

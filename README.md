@@ -154,6 +154,45 @@ automatically restored with that profile.
   extra Poisson-like rate): solved exposures reproduce the requested S/N
   even for bright, scintillation-limited stars.
 
+## Outputs and where to find them
+
+The Results window has three tabs; everything below is also in the CSV
+exports (**Save result CSV** carries every engine field, **Save time-series
+CSV** the per-time table).
+
+**Selected-time result** (per magnitude row in photometry; per wavelength in
+spectroscopy) shows every quantity the engine produced:
+
+| Quantity | Meaning |
+|---|---|
+| `Source e-/s`, `Sky e-/s` | detected rates in the aperture / per resolution element |
+| `S/N` | full noise budget: photon + sky + dark + read + **scintillation** (Young law) + **ADC quantization** (gain/√12) |
+| `σ(EW) [mÅ]` | **spectral-line criterion** (Cayrel 1988): 1.5·√(FWHM·δx)/(S/N per pixel). A line is measurable when its expected equivalent width exceeds ≈3 σ(EW) |
+| `Scint [e-]`, `ADC noise [e-]` | the two non-Poisson noise terms, in electrons, so their weight is visible |
+| `Peak [e-]`, `Peak ADU`, `Sat`, `Max t [s]` | brightest-pixel prediction, saturation cause (`FULL_WELL`/`ADC`/`BOTH`/`NONE`) and the longest unsaturated single frame |
+| `Std obs mag` / `Instr mag` | synthetic standard magnitude in the observing filter vs. the instrument-weighted response magnitude |
+| `Sky mag/"²` | the sky surface brightness actually used at the selected time |
+
+**Time series** adds per time sample: UTC/local time, MJD, elevation,
+azimuth, **parallactic angle**, Pickering airmass, S/N or required exposure,
+sky brightness, band-effective extinction (total and per airmass),
+absorption-adjusted apparent magnitude, saturation flag, peak electrons and
+maximum unsaturated exposure.
+
+**Assumptions / outputs** states, in plain language, every model the run
+used (sky mode and its SQM/table inputs, PSF model, gain-table setting,
+slit-spectrograph geometry, noise terms, saturation policy) followed by a
+**SELECTED-TIME OUTPUTS** block with the S/N, the scintillation and ADC
+noise in electrons (and the scintillation as a percentage of the source),
+the peak-pixel/saturation numbers, the predicted magnitudes, the σ(EW)
+line criterion, the **stack plan** (N × sub-exposure, limiting factor,
+read-noise penalty) and the **differential-photometry precision** in mmag
+against the entered comparison star.
+
+The main-window labels mirror the two planning results live: the stack
+plan under CALCULATION and the differential precision / σ(EW) under
+PHOTOMETRY.
+
 ## Physical conventions
 
 * Internally, wavelengths are Angstrom and all radiometric calculations use

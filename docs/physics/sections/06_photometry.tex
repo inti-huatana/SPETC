@@ -47,6 +47,61 @@ Quantization    & $N_{\rm pix}\,g^2/12$ & per frame & \citet{janesick2001} \\
 t^{-1/2}$, so the S/N ceiling $I/\sigma_{\rm scint} \propto \sqrt{t}$.}
 \end{table}
 
+\subsection{Exposure solving and stack planning}
+\label{sec:stack}
+
+The exposure reaching a requested S/N solves the quadratic obtained from
+Eq.~(\ref{eq:snr}). Crucially, the scintillation variance is \emph{linear}
+in time — with $\sigma/I = C(2t)^{-1/2}$ the variance of $\dot S t$
+electrons is $(\dot S C)^2 t/2$ — so it enters the closed form exactly as
+an additional Poisson-like rate added to $Q = \dot S + \dot B + \dot D$:
+\begin{equation}
+  t \;=\; \frac{\mathrm{SNR}^2\big(Q + \dot S^2 C^2/2\big)
+  + \sqrt{\;\cdot\;^2 + 4\dot S^2\,\mathrm{SNR}^2 N_{\rm pix}\sigma_R^2}}
+  {2\dot S^2}.
+  \label{eq:texp}
+\end{equation}
+Without this term a bright-star exposure request undershoots badly (a
+demonstration case returned S/N 230 for a 500 target); with it the solved
+exposure reproduces the requested S/N to better than 2\% (regression
+tested).
+
+The \textbf{stack planner} answers the practical amateur question ``how
+many subs?'': the sub-exposure is the shortest of the user's preference
+and the saturation limit of the brightest pixel; the total time for $N$
+frames of length $t_{\rm sub}$ follows in closed form from the stacked
+CCD equation $\mathrm{SNR} = \dot S T/\sqrt{QT + N N_{\rm pix}\sigma_R^2}$
+(the scintillation rate is framing-independent, since it averages down
+with total time). Reported alongside are the read-noise penalty relative
+to one ideal long exposure and the frame length above which the background
+variance exceeds $10\,\sigma_R^2$ per pixel — the classical
+``sky-limited'' criterion.
+
+\subsection{Differential photometry}
+\label{sec:differential}
+
+For variable-star and exoplanet work the scientific quantity is the
+differential precision against a comparison star of magnitude $m_c$, in
+millimagnitudes per frame:
+\begin{equation}
+  \sigma_{\rm diff} \;=\; 1085.7\,
+  \sqrt{\mathrm{SNR}_t^{-2} + \mathrm{SNR}_c^{-2}} \quad [\mathrm{mmag}],
+\end{equation}
+where both S/N values carry the full budget of Eq.~(\ref{eq:snr}) — each
+star scintillates — and the two scintillation terms are treated as
+uncorrelated, which is conservative for the arcminute-scale separations
+typical of ensemble photometry \citep{osborn2015}.
+
+\subsection{CMOS gain description}
+
+Amateur CMOS cameras change conversion gain, read noise and full well
+\emph{together} with the gain setting. The detector is therefore
+describable by a per-camera table (setting $\rightarrow$ e$^-$/ADU,
+$\sigma_R$, FWC) rather than one fixed triple; the selected row feeds
+Eq.~(\ref{eq:snr}), the quantization term $g^2/12$ and the saturation
+limits simultaneously, so switching the gain setting consistently moves
+the S/N, the ADC ceiling and the maximum unsaturated exposure.
+
 \subsection{Saturation}
 
 Saturation is evaluated on the brightest pixel of the \emph{unextracted}

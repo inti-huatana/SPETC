@@ -1,0 +1,54 @@
+\section{Filter profiles and synthetic calibration}
+\label{sec:filters}
+
+Professional passbands (Johnson--Cousins, Sloan, 2MASS, \dots) ship as SVO
+Filter Profile Service VOTables \citep{rodrigo2020}. Amateur filters
+(Astrodon, Astronomik, Baader, Optolong, Chroma RGB and narrowband sets)
+are absent from SVO, but a measured or digitized transmission curve is all
+that is required: the zero points are \emph{computed}, not measured. The
+bundled \code{make\_filter\_profile.py} applies the same synthetic
+convention SVO itself uses:
+\begin{itemize}
+\item \textbf{AB}: $Z_\nu = \SI{3631}{Jy}$ at every wavelength by
+  definition \citep{oke1983};
+\item \textbf{Vega}: the photon-weighted mean flux density of the CALSPEC
+  Vega spectrum \citep{bohlin2014} through the filter,
+  \begin{equation}
+    Z_\nu \;=\; \frac{\displaystyle\int F_\lambda^{\rm Vega}\,
+    T_\lambda\,\lambda\,d\lambda}
+    {\displaystyle\int \frac{c}{\lambda^2}\,T_\lambda\,\lambda\,d\lambda},
+  \end{equation}
+  i.e.\ the flux a magnitude-zero star delivers in this band.
+\end{itemize}
+The tool writes full SVO-format VOTables with the complete photdm
+annotation and every characterising quantity measured from the curve by
+the SVO definitions (mean, pivot, effective and photon-weighted
+wavelengths, 1\%-of-peak limits, effective width, FWHM, and the mean solar
+flux \code{Fsun} from the CALSPEC solar spectrum), so the produced files
+are drop-in interchangeable with SVO downloads and land on exactly the
+same photometric scale as the shipped professional profiles.
+
+\begin{table}
+\centering
+\caption{Validation of the synthetic calibration against the shipped SVO
+2MASS.H profile (whose declared values are independent of this code).}
+\label{tab:filtercal}
+\begin{tabular}{lccc}
+\toprule
+Quantity & SVO declared & Computed here & Difference \\
+\midrule
+Pivot wavelength [\si{\angstrom}] & 16494.9 & 16494.7 & $-0.00\%$ \\
+Photon-weighted wavelength [\si{\angstrom}] & 16460.6 & 16423.8 & $-0.2\%$ \\
+Central wavelength [\si{\angstrom}] & 16506.1 & 16487.3 & $-0.1\%$ \\
+$F_\odot$ [\si{erg.cm^{-2}.s^{-1}.\angstrom^{-1}}] & 22.44 & 22.33 & $-0.5\%$ \\
+Vega zero point [Jy] & 1024.0 & 1030.4 & $+0.6\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:filtercal} validates the pipeline end-to-end on 2MASS.H:
+the sub-percent agreement (the residuals reflect SVO's slightly different
+Vega SED normalization) means a profile built from a digitized Astrodon or
+Astronomik curve is calibrated to the same standard as a professional
+filter — no laboratory measurement beyond the transmission curve itself is
+needed.

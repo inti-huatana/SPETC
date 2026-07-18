@@ -1,0 +1,39 @@
+\section{Command-line tools}
+
+\subsection{Calibrating your own filters: \code{make\_filter\_profile.py}}
+
+Amateur filters (Astrodon, Astronomik, Baader, Optolong RGB and
+narrowband) are not in the SVO database, but a transmission curve is all
+that is needed --- the zero points are computed, not measured:
+
+\begin{verbatim}
+python3 make_filter_profile.py Astrodon.G astrodon_g.dat nm
+\end{verbatim}
+
+reads a two-column wavelength/transmission file (0--1 or percent,
+auto-detected; unit Angstrom, nm or um), and writes
+\code{Astrodon.G\_Vega.xml} and \code{Astrodon.G\_AB.xml} into
+\code{data/filters/} in full SVO format: complete VO annotation, all
+characterising wavelengths, FWHM, effective width, the mean solar flux,
+and a Vega zero point computed synthetically from the bundled CALSPEC Vega
+spectrum --- the same convention SVO uses (validated to $\lesssim$1\%
+against the shipped SVO profiles). Add the two printed lines to
+\code{data/filters.list} and the filter appears in the selector on the
+same photometric scale as the professional passbands.
+
+\subsection{Headless runs: \code{spetc\_batch.py}}
+
+\begin{verbatim}
+python3 spetc_batch.py examples/batch_photometry.json out/
+\end{verbatim}
+
+runs the same engines without the GUI from a JSON run description (two
+commented examples ship in \code{examples/}) and writes the full result
+CSV plus a self-contained \textbf{one-page HTML summary}: configuration,
+sky, key numbers ($\sigma$(EW) for spectroscopy, saturation, maximum
+unsaturated exposure), the stack plan, and an embedded S/N figure (S/N
+versus exposure for photometry; S/N versus wavelength for spectroscopy).
+Batch sky modes are \code{fixed\_ab} and \code{sqm}; the Moon and twilight
+terms need the GUI's time machinery and are not applied, as the summary
+footer states. Useful for scripting parameter studies and for archiving a
+session plan.

@@ -13,8 +13,10 @@ mag/airmass converted once, or a $2\times N$ image with \code{CUNIT1}).
 \subsection{\code{observing\_conditions.py}}
 Pure functions, no state: \code{scintillation\_fractional\_rms} /
 \code{scintillation\_variance\_e2} (Young 1967 law),
-\code{digitization\_noise\_e} ($g/\sqrt{12}$),
-\code{refractive\_index\_minus\_one} and
+\code{scintillation\_variance\_rate\_e2\_s} (the same variance expressed
+as a time-linear rate, $(\dot S C)^2/2$, so closed-form solvers can absorb
+it as an extra Poisson-like term), \code{digitization\_noise\_e}
+($g/\sqrt{12}$), \code{refractive\_index\_minus\_one} and
 \code{differential\_refraction\_arcsec} (Filippenko 1982).
 
 \subsection{\code{etc\_physics.py}}
@@ -65,9 +67,25 @@ terms, dispersion).
 \subsection{\code{detector.py}, \code{solvers.py}}
 \code{Detector} stores pixel size, gain, full well, bit depth, read noise,
 dark current; \code{counts\_to\_adu} and \code{saturation\_flag}
-(\code{FULL\_WELL}/\code{ADC}/\code{BOTH}/\code{NONE}).
+(\code{FULL\_WELL}/\code{ADC}/\code{BOTH}/\code{NONE});
+\code{load\_gain\_table} reads the per-setting CMOS tables (Sect.~3).
 \code{solvers.exposure\_time\_for\_snr} inverts the CCD equation in closed
-form.
+form, with \code{extra\_variance\_rate\_e2\_s} absorbing time-linear
+non-Poisson terms (scintillation); \code{solvers.plan\_stack} produces the
+sub-exposure/frame-count plan with the read-noise penalty and the
+sky-limited frame length, on the same closed form.
+
+\subsection{\code{make\_filter\_profile.py}, \code{spetc\_batch.py}}
+Standalone tools sharing the physics modules. \code{make\_filter\_profile}
+turns a two-column transmission file into a full SVO-format VOTable pair:
+\code{measure\_band\_quantities} evaluates every SVO characterising
+quantity (Min/Max/Peak on the tabulated grid, per SVO's literal
+definitions) and \code{synthetic\_vega\_zero\_point\_jy} computes the Vega
+zero point from the bundled CALSPEC spectrum; validated against the
+shipped 2MASS.H profile in the test suite. \code{spetc\_batch.run\_batch}
+drives both engines headless from a JSON description and renders the
+result CSV plus a self-contained HTML summary with an embedded S/N figure
+--- it is also the reference example of the four-dictionary engine API.
 
 \subsection{\code{star\_catalog.py}, \code{filter\_catalog.py},
 \code{config\_manager.py}}

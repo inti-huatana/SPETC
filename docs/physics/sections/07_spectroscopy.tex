@@ -62,6 +62,47 @@ effective resolving power is $R \simeq 100$--200
   \label{fig:sa100}
 \end{figure}
 
+\subsection{Slit-spectrograph geometry}
+\label{sec:geometry}
+
+Amateurs know their spectrograph by its hardware — groove density $n$,
+collimator and camera focal lengths $f_{\rm coll}, f_{\rm cam}$, slit
+width — not by $R$. In the Littrow approximation the grating equation
+gives $\sin\beta = m n \lambda/2$ and a reciprocal linear dispersion
+$d\lambda/dx = \cos\beta \cdot 10^{7}/(m\,n\,f_{\rm cam})$
+[\si{\angstrom}/mm]. The resolution element on the detector is the
+narrower of the geometric slit image and the seeing image, both reimaged
+by $f_{\rm cam}/f_{\rm coll}$ (anamorphism 1 in Littrow):
+\begin{equation}
+  \Delta\lambda = \min(w_{\rm slit}, w_{\rm seeing})\,
+  \frac{f_{\rm cam}}{f_{\rm coll}}\,\frac{d\lambda}{dx},
+  \qquad R = \frac{\lambda}{\Delta\lambda},
+\end{equation}
+with the widths converted from arcsec at the telescope focal plane. The
+calculator reports whether the configuration is slit- or seeing-limited
+and feeds the ETC's resolving-power field, which remains editable; an
+LHIRES III-like configuration (2400 lines/mm, $f=200$~mm Littrow, 25-\si{\micro\metre}
+slit) returns $R \simeq 2\times10^4$ at H$\alpha$, in line with the
+instrument's specification.
+
+\subsection{Equivalent-width detectability}
+\label{sec:ew}
+
+The spectroscopic S/N is turned into a science answer through the
+\citet{cayrel1988} relation for the equivalent-width uncertainty of a line
+of FWHM $W$ sampled with pixels of width $\delta x$:
+\begin{equation}
+  \sigma(\mathrm{EW}) \;\simeq\; \frac{1.5\,\sqrt{W\,\delta x}}
+  {(\mathrm{S/N})_{\rm pixel}},
+  \label{eq:cayrel}
+\end{equation}
+evaluated per wavelength with the resolution element as $W$ and reported
+in m\AA{} in every result table. The practical criterion: a line is
+securely measurable when its expected equivalent width exceeds
+$\simeq 3\,\sigma(\mathrm{EW})$ — e.g.\ $\sigma(\mathrm{EW}) = 15$~m\AA{}
+means H$\alpha$ variations of a Be star at the 50~m\AA{} level are
+detectable, while 20~m\AA{} photospheric lines are marginal.
+
 \subsection{Time series and reverse solving}
 
 Planning series evaluate the S/N reference wavelength bin at every time

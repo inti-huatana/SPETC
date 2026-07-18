@@ -39,9 +39,28 @@ regardless of exposure. The cross-dispersion extraction height is the only
 aperture; there are no slit losses. Slitless results are flagged
 \emph{experimental} until validated on a calibrated instrument.
 
+\subsection{Getting R from your hardware}
+
+If you know your grating (lines/mm) and the collimator and camera focal
+lengths but not $R$: fill the three geometry fields and press
+\textsf{Compute R from geometry}. The Littrow grating equation, your slit
+width, the telescope focal length and the seeing give $R$, the resolution
+element in \AA{} and the dispersion in \AA/mm, and state whether the slit
+or the seeing limits you. The value lands in the R field and can be edited
+freely afterwards.
+
 \subsection{Reading the spectroscopic output}
 
 All spectroscopic counts and S/N are \textbf{per resolution element}, not
 per pixel. The Results table lists, per wavelength: the element width, the
-effective $R$, source and sky rates, S/N, peak electrons and ADU of the
-brightest pixel, the saturation flag and the maximum unsaturated exposure.
+effective $R$, source and sky rates, S/N, \textbf{$\sigma$(EW)} in m\AA{},
+peak electrons and ADU of the brightest pixel, the saturation flag and the
+maximum unsaturated exposure.
+
+\paragraph{The line criterion.} $\sigma$(EW) is the Cayrel (1988)
+equivalent-width uncertainty: a spectral line is securely measurable when
+its expected equivalent width exceeds about $3\,\sigma$(EW). Example:
+$\sigma$(EW) $= 15$ m\AA{} at H$\alpha$ means the 50--100 m\AA{}
+variations of a Be star are detectable, while 20 m\AA{} photospheric lines
+are marginal. The value at the S/N reference wavelength is shown in the
+PHOTOMETRY/summary label and in the Assumptions/outputs tab.

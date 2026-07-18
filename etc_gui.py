@@ -1825,6 +1825,22 @@ class ETCGUI(tk.Tk):
                     visual_detector_type=visual_profile.detector_type,
                     observing_detector_type=observing_profile.detector_type)
                 self._update_differential_precision(selected_calculator, result, exposure_used, run_kwargs)
+                scint_fraction = (result["scintillation_noise_e"]
+                                  / max(result["photons_source_es"] * exposure_used, 1e-300))
+                self._append_info_outputs([
+                    f"Photometry ({result['source_geometry']} source), exposure {exposure_used:.1f} s: "
+                    f"S/N = {result['snr']:.1f}.",
+                    f"Noise terms in the aperture ({result['n_pixels']:.0f} px): scintillation "
+                    f"{result['scintillation_noise_e']:.1f} e- ({100.0 * scint_fraction:.2f}% of source), "
+                    f"ADC quantization {result['digitization_noise_e']:.1f} e-, read noise "
+                    f"{detector.read_noise_e:g} e-/px.",
+                    f"Brightest pixel {result['peak_e_unclipped']:.0f} e- "
+                    f"({result['peak_adu_unclipped']:.0f} ADU), saturation {result['saturation_flag']}; "
+                    f"maximum unsaturated single frame {result['max_unsaturated_exptime_s']:.1f} s.",
+                    f"Predicted standard magnitude in {self.band_var.get()}: "
+                    f"{result['estimated_observing_magnitude']:.3f}; instrumental response magnitude: "
+                    f"{result['instrumental_response_magnitude']:.3f}.",
+                    f"Sky surface brightness used: {result['sky_mag_arcsec2']:.2f} mag/arcsec2."])
                 frame = pd.DataFrame([result]); self._display_table(frame, "mag"); self.result_df = frame
                 plot_args = ("photometry", track, values, label, idx, self.band_var.get())
                 snr_values = values if target_snr is None else np.where(np.isfinite(values), target_snr, np.nan)
@@ -1861,6 +1877,24 @@ class ETCGUI(tk.Tk):
                 self.differential_var.set(
                     f"σ(EW) at {reference_wl:.0f} Å: {float(ref_row['sigma_ew_mangstrom']):.1f} mÅ "
                     "(Cayrel) for the selected exposure.")
+                dispersion_line = (f"Slitless dispersion {spectrum.attrs['dispersion_aa_pix']:.2f} Å/pixel "
+                                   f"(grating efficiency {spectrum.attrs['grating_efficiency']:.2f})."
+                                   if "dispersion_aa_pix" in spectrum.attrs else "")
+                self._append_info_outputs([
+                    f"Spectroscopy ({spectrum.attrs['spectroscopy_mode']}), median resolving power "
+                    f"R = {spectrum.attrs['effective_resolution_R']:.0f}.",
+                    f"At the reference wavelength {reference_wl:.0f} Å: S/N = {float(ref_row['snr']):.1f} "
+                    f"per resolution element; σ(EW) = {float(ref_row['sigma_ew_mangstrom']):.1f} mÅ "
+                    "(Cayrel 1988 line-detection criterion: a line is measurable when its expected "
+                    "EW exceeds ~3 σ(EW)).",
+                    dispersion_line,
+                    f"Noise per resel ({spectrum.attrs['n_pixels_per_resel']:.0f} px): median scintillation "
+                    f"{spectrum.attrs['scintillation_noise_e_median']:.1f} e-, ADC quantization "
+                    f"{spectrum.attrs['digitization_noise_e']:.1f} e-, read noise {detector.read_noise_e:g} e-/px.",
+                    f"Saturation at reference: {ref_row['saturation_flag']}; maximum unsaturated single "
+                    f"frame {float(ref_row['max_unsaturated_exptime_s']):.1f} s.",
+                    f"Sky surface brightness used: {spectrum.attrs['sky_mag_arcsec2']:.2f} mag/arcsec2; "
+                    f"PSF model {spectrum.attrs['psf_model']}."])
                 self._display_table(spectrum, "wavelength_aa"); self.result_df = spectrum
                 plot_args = ("spectroscopy", track, spectra, values, label, idx, slider_indices)
                 snr_values = values if target_snr is None else np.where(np.isfinite(values), target_snr, np.nan)
@@ -1912,14 +1946,9 @@ class ETCGUI(tk.Tk):
         info_frame = ttk.Frame(tabs)
         tabs.add(result_frame, text="Selected-time result")
         tabs.add(time_frame, text="Time series")
-        #tabs.add(info_frame, text="Assumptions / visibility")
-        #tabs.hide(info_frame)
+        tabs.add(info_frame, text="Assumptions / outputs")
 
-        columns = ("X", "Source e-/s", "Sky e-/s", "S/N", "Peak ADU", "Sat")
-        self.tree = ttk.Treeview(result_frame, columns=columns, show="headings")
-        for column, width in zip(columns, [130, 150, 150, 120, 120, 70]):
-            self.tree.heading(column, text=column)
-            self.tree.column(column, width=width, anchor="e")
+        self.tree = ttk.Treeview(result_frame, show="headings")
         result_scroll_y = ttk.Scrollbar(result_frame, orient="vertical", command=self.tree.yview)
         result_scroll_x = ttk.Scrollbar(result_frame, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=result_scroll_y.set, xscrollcommand=result_scroll_x.set)
@@ -1996,8 +2025,13 @@ Sky model: {self.sky_model_var.get()}. ING mode combines the dark-sky table
 with van Rhijn airglow (solar-cycle scaled), zodiacal light at the field's
 ecliptic latitude, integrated starlight at its galactic latitude, the
 Krisciunas & Schaefer (1991) Moon model, twilight blending and the Weaver
-daylight table; fixed_ab uses the manually entered observed ground sky.
+daylight table; fixed_ab uses the manually entered observed ground sky;
+sqm anchors the V sky to the entered zenith SQM reading
+({self.sqm_var.get()} mag/arcsec2) with the built-in band colours and the
+same Moon model on top.
 PSF model: {self.psf_model_var.get()} (Moffat beta {self.moffat_beta_var.get()} where selected).
+{f"Detector fields set from the CMOS gain table, setting {self.gain_setting_var.get()} (gain {self.gain_var.get()} e-/ADU, RN {self.readnoise_var.get()} e-, FWC {self.fullwell_var.get()} e-)." if self.gain_table_rows else "Detector fields entered manually (no CMOS gain table loaded)."}
+{("Slit-spectrograph geometry: " + self.spec_geometry_status_var.get()) if self.mode_var.get() == "spectroscopy" else ""}
 
 Detected counts include collecting area pi/4(D²-d²), scalar and optional
 wavelength-dependent optics throughput, QE, and the loaded Earth-atmosphere
@@ -2022,16 +2056,45 @@ term for each frame when planning a stack.
 """
         self.info_text.delete("1.0", tk.END); self.info_text.insert("1.0", text)
 
+    def _append_info_outputs(self, lines):
+        """Append the selected-time output summary to the assumptions tab."""
+        block = ["", "SELECTED-TIME OUTPUTS", "---------------------"]
+        block += [line for line in lines if line]
+        for extra in (self.stack_plan_var.get(), self.differential_var.get()):
+            if extra and not extra.startswith("Stack plan appears"):
+                block.append(extra)
+        self.info_text.insert(tk.END, "\n".join(block) + "\n")
+
+    # Column key -> visible heading; only keys present in the result frame are
+    # shown, so photometric and spectroscopic runs each display every quantity
+    # the engine produced (the CSV export always carries the full table).
+    _RESULT_COLUMNS = (
+        ("mag", "Magnitude"), ("wavelength_aa", "Wavelength [Å]"),
+        ("resolution_element_aa", "Resel [Å]"), ("effective_resolution_R", "R"),
+        ("photons_source_es", "Source e-/s"), ("photons_sky_es", "Sky e-/s"),
+        ("snr", "S/N"), ("sigma_ew_mangstrom", "σ(EW) [mÅ]"),
+        ("scintillation_noise_e", "Scint [e-]"), ("digitization_noise_e", "ADC noise [e-]"),
+        ("n_pixels", "N pix"), ("peak_e_unclipped", "Peak [e-]"), ("adu", "Peak ADU"),
+        ("saturation_flag", "Sat"), ("max_unsaturated_exptime_s", "Max t [s]"),
+        ("estimated_observing_magnitude", "Std obs mag"),
+        ("instrumental_response_magnitude", "Instr mag"), ("sky_mag_arcsec2", "Sky mag/\"²"),
+    )
+
     def _display_table(self, frame, xcol):
         self._ensure_results_window()
+        available = [(key, heading) for key, heading in self._RESULT_COLUMNS if key in frame.columns]
+        columns = tuple(key for key, _ in available)
+        self.tree.configure(columns=columns)
+        for key, heading in available:
+            if key == "mag":
+                heading = f"Magnitude [{self.mag_system_var.get()}]"
+            self.tree.heading(key, text=heading)
+            self.tree.column(key, width=118 if key in (xcol, "saturation_flag") else 105,
+                             minwidth=70, anchor="e")
         self.tree.delete(*self.tree.get_children())
-        self.tree.heading("X", text=f"Magnitude [{self.mag_system_var.get()}]" if xcol == "mag" else "Wavelength [Å]")
         for _, row in frame.iterrows():
-            x_value = f"{row[xcol]:.3f}" if xcol == "mag" else f"{row[xcol]:.2f}"
-            saturation = row.get("saturation_flag", "SATURATED" if row["saturated"] else "")
-            self.tree.insert("", "end", values=(x_value, f"{row['photons_source_es']:.3e}",
-                                                   f"{row['photons_sky_es']:.3e}", f"{row['snr']:.3f}",
-                                                   str(row["adu"]), saturation if row["saturated"] else ""))
+            self.tree.insert("", "end",
+                             values=[self._format_table_value(row[key]) for key in columns])
 
     def _open_plot(self):
         if self.plot_window is None or not self.plot_window.winfo_exists():

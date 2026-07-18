@@ -20,10 +20,16 @@ Telescope diameter, central obstruction, focal length and scalar optics
 throughput; optional calibrated instrument-response and slit
 resolving-power curves (two-column files with an explicit wavelength unit);
 detector pixel size, gain, full well, ADC bit depth, read noise and dark
-current; seeing FWHM; the sky-background mode (\code{ing} = physical
-night/twilight/day model, \code{fixed\_ab} = your own observed sky surface
-brightness); and the \textbf{PSF model} (\code{gaussian} or \code{moffat}
-with its $\beta$; Moffat reproduces the wings of real star images and is
+current; a \textbf{CMOS gain table} (a text file with one row per gain
+setting: setting, e$^-$/ADU, read noise, full well — published by camera
+makers and measured on PhotonsToPhotos): pick the setting and the three
+detector fields fill consistently; seeing FWHM; the sky-background mode
+(\code{ing} = physical night/twilight/day model, \code{fixed\_ab} = your
+own observed sky surface brightness, \code{sqm} = your \textbf{zenith SQM
+reading} in $V$ mag/arcsec$^2$, with a \textbf{Bortle class} preset that
+fills a typical value; band colours and the Moon model are applied on
+top); and the \textbf{PSF model} (\code{gaussian} or \code{moffat} with
+its $\beta$; Moffat reproduces the wings of real star images and is
 recommended). \textsf{Save/Load instrument profile} stores the whole column
 as a portable JSON with its QE and response curves.
 
@@ -31,14 +37,23 @@ as a portable JSON with its QE and response curves.
 
 Photometry or spectroscopy; exposure time; optional \textbf{target S/N}
 (when set, the ETC returns the required exposure instead, flagging
-saturation). The photometry panel adds the aperture radius and the
+saturation — the solver includes scintillation, so bright-star requests
+are honest); the \textbf{stack sub-exposure} preference (0 = automatic)
+feeding the stack planner, whose result appears in the label below after
+each run. The photometry panel adds the aperture radius, the
 \textbf{source geometry}: \code{point}, or \code{extended} with the source
 area in arcsec$^2$ for galaxies, nebulae and planets (the magnitude you
-enter stays the \emph{total} integrated magnitude). The spectroscopy panel
-holds the resolving power, slit width, extraction height, sampling, the
-slitless parameters (Sect.~\ref{sec:spec-guide}), the wavelength range and
-the S/N reference wavelength, and the \textbf{slit orientation}
-(\code{parallactic} or \code{fixed}).
+enter stays the \emph{total} integrated magnitude), and the optional
+\textbf{comparison-star magnitude} for differential photometry — the
+mmag-per-frame precision appears in the label below. The spectroscopy
+panel holds the resolving power, slit width, extraction height, sampling,
+the slitless parameters (Sect.~\ref{sec:spec-guide}), the wavelength range
+and the S/N reference wavelength, the \textbf{slit orientation}
+(\code{parallactic} or \code{fixed}), and the \textbf{spectrograph
+geometry helper}: enter grating lines/mm and collimator/camera focal
+lengths and press \textsf{Compute R from geometry} — the Littrow grating
+equation fills the R field (which stays editable) and reports whether you
+are slit- or seeing-limited.
 
 \subsection{Filter and template selection}
 

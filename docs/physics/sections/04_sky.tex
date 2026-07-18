@@ -96,6 +96,24 @@ within $30^\circ$ of the Moon (Fig.~\ref{fig:ks}).
   \label{fig:ks}
 \end{figure}
 
+\subsection{SQM and Bortle input}
+\label{sec:sqm}
+
+Amateur observers know their sky as a Sky Quality Meter reading (zenith
+$V$ surface brightness) or a \citet{bortle2001} class rather than as a
+per-band table. In \code{sqm} mode the entered zenith SQM value $\mu_{\rm
+SQM}$ replaces the dark-sky normalization directly:
+\begin{equation}
+  \mu(\lambda_{\rm piv}) \;=\; \mu_{\rm SQM} \;+\;
+  \big[\mu_{\rm tab}(\lambda_{\rm piv}) - \mu_{\rm tab}(V)\big],
+\end{equation}
+i.e.\ the built-in table supplies only the band colour, while the SQM
+reading — which already contains the site's light pollution and current
+airglow — sets the level. The Krisciunas--Schaefer Moon contribution of
+the previous subsection is applied on top unchanged. A Bortle-class
+selector fills typical zenith SQM values (21.9, 21.8, 21.6, 21.1, 20.5,
+19.8, 19.0, 18.0, 17.0 mag\,arcsec$^{-2}$ for classes 1--9).
+
 \subsection{Twilight and daylight}
 
 Between Sun altitudes of $-18^\circ$ and $0^\circ$ the dark and daylight

@@ -22,6 +22,16 @@
     auto-detected.
   \item[\code{earth\_atmospheric\_transmission.fits}] Optional; accepted
     layouts in Sect.~2 (\code{spectral\_utils}).
+  \item[CMOS gain tables] One row per gain setting, whitespace- or
+    comma-separated, \code{\#} comments allowed:
+    \code{setting  e-/ADU  read\_noise\_e  full\_well\_e}. Loaded through
+    \code{detector.load\_gain\_table}; the GUI persists the path in
+    \code{gain\_table\_path} and restores it at start-up.
+  \item[Batch run descriptions] JSON, see \code{examples/}: top-level
+    \code{mode}, \code{telescope}, \code{detector}, \code{atmosphere},
+    \code{sky} (\code{fixed\_ab}/\code{sqm}), \code{target},
+    \code{photometry} or \code{spectroscopy} blocks, optional
+    \code{target\_snr} and \code{stack\_sub\_exposure\_s}.
 \end{description}
 
 \subsection{Configuration and profiles}

@@ -30,11 +30,25 @@ surface brightness, which is what actually saturates on a resolved object.
 The approximation is intended for sources clearly larger than the seeing
 disc.
 
-\subsection{Target S/N mode}
+\subsection{Target S/N mode and the stack planner}
 
 Enter a value in \textsf{Target S/N} to invert the calculation: the ETC
-solves for the exposure in closed form, including read noise, and the
-time-series plot switches to required exposure versus time. If the required
-exposure would saturate the brightest pixel, the result is flagged and the
-maximum unsaturated single-frame exposure is reported --- split the
-integration into shorter frames and budget one read-noise term per frame.
+solves for the exposure in closed form, including read noise \emph{and
+scintillation} (bright-star requests would otherwise undershoot badly),
+and the time-series plot switches to required exposure versus time. The
+\textbf{stack planner} then answers ``how many subs?'' in the label under
+CALCULATION: $N \times t_{\rm sub}$ (the sub capped by pixel saturation or
+your entered preference), the total time, the read-noise penalty relative
+to one ideal long exposure, and the frame length above which the sky
+background dominates read noise. Without a target S/N the label still
+shows the saturation cap and the sky-limited frame length as guidance.
+
+\subsection{Differential photometry (variable stars, exoplanets)}
+
+Enter the magnitude of your comparison star in \textsf{Comparison star mag}:
+after the run the PHOTOMETRY label (and the Assumptions/outputs tab)
+reports the differential precision in \textbf{millimagnitudes per frame},
+combining both stars' full noise budgets (each including scintillation,
+treated as uncorrelated — conservative). ``3.2 mmag per 60 s frame'' is
+directly the number AAVSO and transit observers plan with: a 12 mmag
+transit needs several frames per point at that precision.

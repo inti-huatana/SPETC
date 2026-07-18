@@ -178,20 +178,84 @@ def electron_rate(wavelength, f_lambda, throughput, qe, telescope, atmosphere):
     return trapz_quantity(integrand, wavelength).to(1 / u.s)
 
 
-def gaussian_encircled_energy(radius_arcsec, seeing_arcsec):
+FWHM_TO_SIGMA = 2.354820045
+
+
+def _moffat_alpha(seeing_arcsec, beta):
+    """Moffat core radius alpha from the FWHM: FWHM = 2 alpha sqrt(2^(1/beta) - 1)."""
+    beta = float(beta)
+    if beta <= 1.0:
+        raise ValueError("Moffat beta must exceed 1 for a finite total flux.")
+    return float(seeing_arcsec) / (2.0 * np.sqrt(2.0 ** (1.0 / beta) - 1.0))
+
+
+def psf_encircled_energy(radius_arcsec, seeing_arcsec, psf_model="gaussian", moffat_beta=2.5):
+    """Circular-aperture encircled energy for a Gaussian or Moffat PSF.
+
+    Moffat: EE(r) = 1 - [1 + (r/alpha)^2]^(1-beta), the analytic integral of
+    the circular Moffat profile.  Small beta (2.5-3) reproduces the extended
+    wings of real seeing-limited images that a Gaussian underestimates.
+    """
     if radius_arcsec <= 0 or seeing_arcsec <= 0:
         raise ValueError("Aperture radius and seeing must be positive.")
-    sigma = seeing_arcsec / 2.354820045
-    return 1.0 - np.exp(-0.5 * (radius_arcsec / sigma)**2)
+    model = str(psf_model).strip().lower()
+    if model == "gaussian":
+        sigma = seeing_arcsec / FWHM_TO_SIGMA
+        return 1.0 - np.exp(-0.5 * (radius_arcsec / sigma) ** 2)
+    if model == "moffat":
+        alpha = _moffat_alpha(seeing_arcsec, moffat_beta)
+        return 1.0 - (1.0 + (radius_arcsec / alpha) ** 2) ** (1.0 - float(moffat_beta))
+    raise ValueError("PSF model must be 'gaussian' or 'moffat'.")
+
+
+def psf_slit_throughput(width_arcsec, seeing_arcsec, psf_model="gaussian", moffat_beta=2.5,
+                        offset_arcsec=0.0):
+    """Fraction of PSF light through an infinite slit, optionally decentred.
+
+    The Gaussian case is the erf coupling integral.  For a circular Moffat
+    profile the one-dimensional marginal is exactly a Student-t distribution
+    with nu = 2 beta - 2 degrees of freedom and scale alpha/sqrt(nu), so the
+    throughput uses its CDF with no numerical integration.
+    ``offset_arcsec`` decentres the PSF (e.g. atmospheric-dispersion drift).
+    """
+    if width_arcsec <= 0 or seeing_arcsec <= 0:
+        raise ValueError("Slit width and seeing must be positive.")
+    half = 0.5 * float(width_arcsec)
+    offset = np.abs(np.asarray(offset_arcsec, dtype=float))
+    model = str(psf_model).strip().lower()
+    if model == "gaussian":
+        from scipy.special import erf
+        sigma = seeing_arcsec / FWHM_TO_SIGMA
+        scale = np.sqrt(2.0) * sigma
+        result = 0.5 * (erf((half - offset) / scale) + erf((half + offset) / scale))
+    elif model == "moffat":
+        from scipy.stats import t as student_t
+        beta = float(moffat_beta)
+        alpha = _moffat_alpha(seeing_arcsec, beta)
+        nu = 2.0 * beta - 2.0
+        scale = alpha / np.sqrt(nu)
+        result = (student_t.cdf((half - offset) / scale, df=nu)
+                  - student_t.cdf((-half - offset) / scale, df=nu))
+    else:
+        raise ValueError("PSF model must be 'gaussian' or 'moffat'.")
+    return float(result) if np.ndim(result) == 0 else np.asarray(result, dtype=float)
+
+
+def gaussian_encircled_energy(radius_arcsec, seeing_arcsec):
+    """Backward-compatible Gaussian wrapper for :func:`psf_encircled_energy`."""
+    return psf_encircled_energy(radius_arcsec, seeing_arcsec, "gaussian")
 
 
 def slit_throughput(width_arcsec, seeing_arcsec):
-    if width_arcsec <= 0 or seeing_arcsec <= 0:
-        raise ValueError("Slit width and seeing must be positive.")
-    sigma = seeing_arcsec / 2.354820045
-    return float(math.erf(width_arcsec / (2.0 * np.sqrt(2.0) * sigma)))
+    """Backward-compatible Gaussian wrapper for :func:`psf_slit_throughput`."""
+    return psf_slit_throughput(width_arcsec, seeing_arcsec, "gaussian")
 
 
-def snr(source_e, sky_e, dark_e, read_noise_e, n_pixels):
-    variance = source_e + sky_e + dark_e + n_pixels * read_noise_e**2
+def snr(source_e, sky_e, dark_e, read_noise_e, n_pixels, extra_variance_e2=0.0):
+    """CCD-equation S/N with an optional extra variance term [e^-2].
+
+    ``extra_variance_e2`` collects non-Poisson contributions such as
+    scintillation and ADC quantization noise.
+    """
+    variance = source_e + sky_e + dark_e + n_pixels * read_noise_e**2 + extra_variance_e2
     return source_e / np.sqrt(max(variance, 1e-300))

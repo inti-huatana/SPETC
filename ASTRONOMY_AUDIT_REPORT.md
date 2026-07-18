@@ -129,14 +129,10 @@ These were checked and are right — recorded so a future editor doesn't "fix" t
 These are legitimate simplifications, but they set the accuracy floor of the ETC
 and should be stated to users:
 
-1. **Template calibration assumes `mv0` = the file's synthetic magnitude in the
-   passed visual band.** `calibrated_template_magnitude` yields a delivered
-   reference magnitude of `target + m_vis(F_z)`, which equals `target` only if the
-   visual-zero template really has visual magnitude 0 — i.e. the catalogue `mv0`
-   matches the template's own synthetic V. True for the shipped BPGS (mv0=0) and
-   the Sun entry, but a mis-tabulated `mv0`, or a template whose native flux
-   system differs from the chosen visual passband, introduces a silent zero-point
-   offset. Medium confidence; worth a validation assert.
+1. **Template calibration via `mv0`** — *withdrawn after author review.* The
+   shipped templates are Bohlin CALSPEC/BPGS absolute spectrophotometry from HST
+   data, so the tabulated `mv0` is the file's visual magnitude by construction
+   and the Fortran `10^(0.4 mv0)` convention is exact for this catalogue.
 
 2. **Airmass = sec z** (`secz` from AltAz, or `1/sin alt`). No Young/Rozenberg
    curvature term, so airmass is overestimated for X ≳ 3–4. The 5° altitude cutoff
@@ -209,7 +205,6 @@ and should be stated to users:
 | 1.1 | K&S moon scattering `f(ρ)` misparenthesized | **High** | Yes, whenever Moon is up |
 | 1.3 | Sky brightness independent of target ecliptic/galactic latitude | Medium–High | Yes, always |
 | 1.2 | Zodiacal light uses signed `sin β` | Medium | Dormant (β always 0) |
-| 3.1 | `mv0` = template synthetic-V assumption | Low–Medium | Yes (benign for BPGS) |
 | 3.2–3.4 | Airmass/airglow simplifications | Low | Yes |
 
 The single highest-value scientific fix is **1.1** — it is a clear transcription

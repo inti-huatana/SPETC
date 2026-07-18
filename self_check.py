@@ -27,8 +27,12 @@ def main():
         pixels_per_resel=2.0, extraction_height_arcsec=1.0)
     max_spec_snr = float(spec["snr"].max())
     assert 150.0 < max_spec_snr < 800.0, max_spec_snr
-    assert 8.0e3 < phot["snr"] < 3.0e4, phot["snr"]
-    print(f"PASS: photometric S/N={phot['snr']:.1f}; spectral max S/N/resel={max_spec_snr:.1f}")
+    # A V=5 target in 60 s is scintillation-limited, not photon-limited: the
+    # Young-law fractional rms (~7.6e-4 for 358 mm, X=1, sea level) caps the
+    # broad-band S/N near 1/sigma_scint ~ 1.3e3.
+    assert 8.0e2 < phot["snr"] < 3.0e3, phot["snr"]
+    print(f"PASS: photometric S/N={phot['snr']:.1f} (scintillation-limited); "
+          f"spectral max S/N/resel={max_spec_snr:.1f}")
 
 
 if __name__ == "__main__":

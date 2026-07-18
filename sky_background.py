@@ -9,10 +9,9 @@ site-specific spectral sky model.
 from datetime import datetime
 import numpy as np
 
+from sky_brightness import (SOLAR_MINIMA, SOLAR_CYCLE as SOLAR_CYCLE_YR,
+                            dark_sky_position_correction_mag)
 
-SOLAR_MINIMA = np.array([1901.04, 1913.62, 1924.05, 1933.63, 1944.28, 1954.04,
-                         1964.54, 1976.54, 1986.45, 1996.80, 2008.62, 2019.96])
-SOLAR_CYCLE_YR = 11.00606
 SKY_WAVELENGTH_AA = np.array([3650.0, 4450.0, 5510.0, 6580.0, 8060.0, 10000.0, 12500.0, 16500.0, 22000.0])
 SKY_MAG_VEGA = np.array([22.0, 22.7, 21.9, 21.0, 20.0, 18.8, 16.1, 14.7, 12.5])
 SKY_EXT_MAG = np.array([0.550, 0.250, 0.150, 0.090, 0.060, 0.050, 0.100, 0.110, 0.070])
@@ -56,24 +55,25 @@ def _daylight_v_mag(sun_altitude_deg, target_altitude_deg):
 
 
 def sky_magnitude_vega(pivot_wavelength_aa, utc_datetime, target_altitude_deg, target_airmass,
-                        sun_altitude_deg):
+                        sun_altitude_deg, ecliptic_lat_deg=90.0, galactic_lat_deg=90.0):
     """Estimated observed sky surface brightness in Vega mag/arcsec².
 
-    Below -18° Sun altitude this is the supplied dark-sky table corrected for
-    the solar-cycle airglow factor and approximate sky airmass.  Between -18°
-    and the horizon, dark and daylight fluxes are blended smoothly.  Above the
-    horizon, Weaver's V-band daylight table is used; its supplied broad-band
-    dark-sky colour relation is interpolated to the selected filter pivot.
+    Below -18° Sun altitude this is the supplied dark-sky table with a
+    position-dependent correction: van Rhijn airglow scaled by the solar-cycle
+    activity, zodiacal light at the field's |ecliptic latitude| and integrated
+    starlight at its |galactic latitude|.  Between -18° and the horizon, dark
+    and daylight fluxes are blended smoothly.  Above the horizon, Weaver's
+    V-band daylight table is used; its supplied broad-band dark-sky colour
+    relation is interpolated to the selected filter pivot.
     """
     wavelength = float(pivot_wavelength_aa)
     base_mag = float(np.interp(wavelength, SKY_WAVELENGTH_AA, SKY_MAG_VEGA))
     v_base = float(np.interp(5510.0, SKY_WAVELENGTH_AA, SKY_MAG_VEGA))
     colour = base_mag - v_base
-    airmass = float(target_airmass) if np.isfinite(target_airmass) else 1.0
-    airmass = max(airmass, 1.0)
     activity = solar_cycle_activity(utc_datetime)
-    airglow_factor = (145.0 + 130.0 * (activity - 0.8) / 1.2) / 145.0
-    night_mag = base_mag - 2.5 * np.log10(airglow_factor * airmass)
+    zenith_dist = 90.0 - float(np.clip(target_altitude_deg, 0.0, 90.0))
+    night_mag = base_mag + dark_sky_position_correction_mag(
+        zenith_dist, ecliptic_lat_deg, galactic_lat_deg, solar_activity=activity)
     daylight_mag = _daylight_v_mag(max(float(sun_altitude_deg), 0.0), target_altitude_deg) + colour
     if sun_altitude_deg >= 0.0:
         return daylight_mag

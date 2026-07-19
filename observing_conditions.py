@@ -62,6 +62,26 @@ def scintillation_variance_rate_e2_s(source_rate_e_s, diameter_mm, airmass, elev
     return (float(source_rate_e_s) * c_factor) ** 2 / 2.0
 
 
+def effective_seeing_arcsec(seeing_zenith_v_arcsec, wavelength_aa, airmass,
+                            reference_wavelength_aa=5000.0):
+    """Seeing FWHM scaled to wavelength and airmass (Kolmogorov turbulence).
+
+    ``FWHM(lambda, X) = seeing_V(zenith) * X^0.6 * (lambda/5000)^(-0.2)``,
+    the standard Fried-parameter scaling (r0 ~ lambda^1.2 cos(z)^0.6, seeing
+    ~ lambda/r0).  This is the exact form used by ETC-42
+    (``calculator/psf/Seeing.java``, CeSAM/LAM); the reference seeing is the
+    zenith value in V.  Blue light is more blurred than red, and the seeing
+    degrades as the target descends towards the horizon.
+    """
+    seeing = float(seeing_zenith_v_arcsec)
+    if seeing <= 0:
+        raise ValueError("Reference seeing must be positive.")
+    x = max(float(airmass), 1.0)
+    scale = x ** 0.6 * (np.asarray(wavelength_aa, dtype=float)
+                        / float(reference_wavelength_aa)) ** (-0.2)
+    return seeing * scale
+
+
 def digitization_noise_e(gain_e_adu):
     """Quantization noise of the ADC in electrons rms per pixel: g/sqrt(12)."""
     gain = float(gain_e_adu)

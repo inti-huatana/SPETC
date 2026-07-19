@@ -433,6 +433,66 @@ def test_horizon_profile_math_and_csv_roundtrip():
         assert metadata["radius_km"] == 5.0 and metadata["latitude_deg"] == 45.0
 
 
+def test_effective_seeing_kolmogorov_scaling():
+    """ETC-42 Seeing.java formula: FWHM = seeing_V * X^0.6 * (lambda/5000)^-0.2."""
+    from observing_conditions import effective_seeing_arcsec
+    assert np.isclose(effective_seeing_arcsec(1.0, 5000.0, 1.0), 1.0)          # V, zenith
+    assert np.isclose(effective_seeing_arcsec(1.0, 5000.0, 2.0), 2.0 ** 0.6)   # airmass 2
+    assert np.isclose(effective_seeing_arcsec(1.0, 4000.0, 1.0), (4000.0 / 5000.0) ** -0.2)
+    # Blue is more blurred than red.
+    assert effective_seeing_arcsec(1.0, 4000.0, 1.0) > effective_seeing_arcsec(1.0, 7000.0, 1.0)
+
+
+def test_seeing_scaling_is_opt_in_and_colours_slit_losses():
+    """Flag off = unchanged; on = bluer wavelengths lose more slit light."""
+    wavelength = np.linspace(3800.0, 7500.0, 800)
+    template = np.column_stack((wavelength, np.full_like(wavelength, 3.6e-9)))
+    band = np.column_stack((wavelength, np.ones_like(wavelength)))
+    qe = np.column_stack((wavelength, np.full_like(wavelength, 0.8)))
+    telescope = {"diameter_mm": 358.0, "obstruction_mm": 87.5, "efficiency": 0.7, "focal_length_mm": 2000.0}
+    detector = Detector(13.5, 2.5, 80000.0, 16, 5.0, 0.02)
+    sky = {"sky_mag": 21.0, "sky_zero_point_jy": 3631.0, "sky_at_telescope": True}
+    args = (template, 2000.0, 1.5, 60.0, (3900.0, 7400.0), 8.0, qe, band)
+    kw = dict(visual_band=band)
+    flat = SpectroscopyETC(telescope, detector,
+                           {"airmass": 1.5, "seeing_arcsec": 2.0, "transmission_curve": None}, sky)
+    scaled = SpectroscopyETC(telescope, detector,
+                             {"airmass": 1.5, "seeing_arcsec": 2.0, "transmission_curve": None,
+                              "seeing_wavelength_scaling": True}, sky)
+    r_flat = flat.compute_spectroscopy(*args, **kw)
+    r_scaled = scaled.compute_spectroscopy(*args, **kw)
+    w = r_flat["wavelength_aa"].to_numpy()
+    i_blue, i_red = int(np.argmin(abs(w - 4200))), int(np.argmin(abs(w - 7000)))
+    ratio_flat = r_flat["photons_source_es"].to_numpy()[i_blue] / r_flat["photons_source_es"].to_numpy()[i_red]
+    ratio_scaled = r_scaled["photons_source_es"].to_numpy()[i_blue] / r_scaled["photons_source_es"].to_numpy()[i_red]
+    assert ratio_scaled < ratio_flat  # scaling suppresses the blue relative to the red
+
+
+def test_extra_background_increases_noise_and_peak():
+    from photometry import PhotometryETC
+    wavelength = np.linspace(4000.0, 7000.0, 200)
+    template = np.column_stack((wavelength, np.full_like(wavelength, 1e-13)))
+    band = np.column_stack((wavelength, np.ones_like(wavelength)))
+    qe = np.column_stack((wavelength, np.full_like(wavelength, 0.8)))
+    telescope = {"diameter_mm": 358.0, "obstruction_mm": 87.5, "efficiency": 0.7, "focal_length_mm": 2000.0}
+    detector = Detector(13.5, 2.5, 80000.0, 16, 5.0, 0.02)
+    atmosphere = {"airmass": 1.0, "seeing_arcsec": 2.0, "transmission_curve": None}
+    base_sky = {"sky_mag": 21.0, "sky_zero_point_jy": 3631.0, "sky_at_telescope": True,
+                "aperture_radius_arcsec": 3.0}
+    hot_sky = dict(base_sky, extra_background_e_s_pixel=5.0)
+    r0 = PhotometryETC(telescope, detector, atmosphere, base_sky).compute_photometry_single(
+        template, band, qe, 15.0, 60.0)
+    r1 = PhotometryETC(telescope, detector, atmosphere, hot_sky).compute_photometry_single(
+        template, band, qe, 15.0, 60.0)
+    assert r1["snr"] < r0["snr"]                              # extra background lowers S/N
+    assert r1["peak_e_unclipped"] > r0["peak_e_unclipped"]    # and raises the peak pixel
+    # Zero extra background is exactly the baseline (backward compatibility).
+    r_zero = PhotometryETC(telescope, detector, atmosphere,
+                           dict(base_sky, extra_background_e_s_pixel=0.0)).compute_photometry_single(
+        template, band, qe, 15.0, 60.0)
+    assert np.isclose(r_zero["snr"], r0["snr"])
+
+
 def test_filter_profile_builder_matches_svo_scale():
     """Synthetic Vega zero point of the shipped Bessell.V profile must land
     within ~1% of the SVO-declared value."""
@@ -458,6 +518,9 @@ if __name__ == "__main__":
     test_horizon_profile_math_and_csv_roundtrip()
     test_osc_channel_scales_rates_and_pixels_not_peak()
     test_calspec_display_name_cleaning()
+    test_effective_seeing_kolmogorov_scaling()
+    test_seeing_scaling_is_opt_in_and_colours_slit_losses()
+    test_extra_background_increases_noise_and_peak()
     test_filter_profile_builder_matches_svo_scale()
     test_spectroscopic_observing_filter_applies_to_source_and_sky()
     test_fits_atmosphere_wavelength_unit_is_honoured()

@@ -14,7 +14,7 @@ import astropy.units as u
 from etc_physics import (as_angstrom_curve, calibrated_template_magnitude, electron_rate,
                          magnitude_f_lambda, psf_encircled_energy, psf_slit_throughput,
                          snr, synthetic_magnitude)
-from observing_conditions import digitization_noise_e, scintillation_variance_e2
+from observing_conditions import digitization_noise_e, effective_seeing_arcsec, scintillation_variance_e2
 from spectral_utils import require_coverage, interpolate_checked, interpolate_zero_filled
 
 
@@ -75,6 +75,14 @@ class PhotometryETC:
         )
     
         seeing = float(self.atmosphere["seeing_arcsec"])
+        # Optional Kolmogorov seeing scaling: the entered seeing is the zenith
+        # V value, and the broad-band effective seeing is evaluated at the
+        # transmission-weighted pivot wavelength of the observing filter at the
+        # current airmass (ETC-42 convention).  Disabled by default (flat).
+        if self.atmosphere.get("seeing_wavelength_scaling", False):
+            pivot_aa = float(np.average(wave.to_value(u.AA), weights=transmission))
+            seeing = float(effective_seeing_arcsec(seeing, pivot_aa,
+                                                   float(self.atmosphere.get("airmass", 1.0))))
         psf_model = str(self.atmosphere.get("psf_model", "gaussian"))
         moffat_beta = float(self.atmosphere.get("moffat_beta", 2.5))
         aperture_radius = float(self.sky_model.get("aperture_radius_arcsec", 1.0))
@@ -122,15 +130,21 @@ class PhotometryETC:
         source_e = source_rate.to_value(1 / u.s) * t_exp_s
         sky_e = sky_rate.to_value(1 / u.s) * t_exp_s
         dark_e = self.detector.dark_current_e_s_pix * n_pixels * t_exp_s
+        # Generic extra background per pixel (detector glow, stray/scattered
+        # light, ghosting): a catch-all Poisson background term the physical
+        # model does not otherwise cover (cf. ETC-42 ExtraBackgroundNoise).
+        extra_bg_rate = float(self.sky_model.get("extra_background_e_s_pixel", 0.0))
+        extra_bg_e = extra_bg_rate * n_pixels * t_exp_s
         scintillation_var = scintillation_variance_e2(
             source_e, float(self.telescope["diameter_mm"]),
             float(self.atmosphere.get("airmass", 1.0)),
             float(self.atmosphere.get("elevation_m", 0.0)), t_exp_s)
         digitization_var = n_pixels * digitization_noise_e(self.detector.gain_e_adu)**2
         result_snr = snr(source_e, sky_e, dark_e, self.detector.read_noise_e, n_pixels,
-                         extra_variance_e2=scintillation_var + digitization_var)
+                         extra_variance_e2=scintillation_var + digitization_var + extra_bg_e)
         peak_total = (peak_source_rate_es * t_exp_s + sky_e / n_pixels
-                      + self.detector.dark_current_e_s_pix * t_exp_s)
+                      + self.detector.dark_current_e_s_pix * t_exp_s
+                      + extra_bg_rate * t_exp_s)
         peak_rate_e_s = peak_total / t_exp_s
         saturation_limit_e = min(self.detector.full_well_e, self.detector.max_electrons)
         max_unsaturated_exptime_s = saturation_limit_e / peak_rate_e_s if peak_rate_e_s > 0 else np.inf

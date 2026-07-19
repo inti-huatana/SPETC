@@ -128,6 +128,17 @@ automatically restored with that profile.
 * **SQM / Bortle sky mode**: enter your zenith SQM reading (V mag/arcsec²),
   or pick a Bortle class to fill a typical value; band colours and the
   Krisciunas & Schaefer Moon model are applied on top.
+* **Wavelength- and airmass-dependent seeing** (opt-in checkbox): when
+  enabled, the entered seeing is treated as the zenith V value and scaled as
+  `FWHM = seeing_V x airmass^0.6 x (lambda/5000)^-0.2` (Kolmogorov turbulence;
+  the convention used by ETC-42, CeSAM/LAM). Blue light is then more blurred
+  than red — colouring the spectroscopic slit losses — and the seeing
+  worsens as the target descends, which the whole-night time series now
+  reflects. Off by default (flat seeing, unchanged).
+* **Generic extra background** (e-/s/pixel): a catch-all Poisson background
+  term for detector glow, stray/scattered light or ghosting that the
+  physical model does not otherwise cover (cf. ETC-42's ExtraBackgroundNoise).
+  It adds to the background noise and the peak-pixel/saturation prediction.
 * **One-shot-colour (Bayer/OSC) sensors**: select `osc` and the channel
   (R/G/B). A single-channel extraction sees only that channel's share of
   the mosaic (G 1/2, R/B 1/4): aperture source and sky rates and the

@@ -19,7 +19,7 @@ from etc_physics import (as_angstrom_curve, calibrated_template_magnitude, magni
                          psf_slit_throughput, collecting_area, atmospheric_transmission,
                          instrument_transmission)
 from observing_conditions import (differential_refraction_arcsec, digitization_noise_e,
-                                  scintillation_variance_e2)
+                                  effective_seeing_arcsec, scintillation_variance_e2)
 from astropy.constants import h, c
 from ephemeris import site_pressure_hpa, site_temperature_c
 from spectral_utils import require_coverage, interpolate_checked, interpolate_zero_filled
@@ -120,6 +120,11 @@ class SpectroscopyETC:
         psf_model = str(self.atmosphere.get("psf_model", "gaussian"))
         moffat_beta = float(self.atmosphere.get("moffat_beta", 2.5))
         airmass = float(self.atmosphere.get("airmass", 1.0))
+        # Optional Kolmogorov scaling of the seeing with wavelength and
+        # airmass (FWHM ~ X^0.6 (lambda/5000)^-0.2, the ETC-42 convention);
+        # the entered seeing is then the zenith V value.  When disabled the
+        # seeing is flat, as before.
+        seeing_scaling = bool(self.atmosphere.get("seeing_wavelength_scaling", False))
         elevation_m = float(self.atmosphere.get("elevation_m", 0.0))
         pressure_hpa = float(self.atmosphere.get("pressure_hpa", site_pressure_hpa(elevation_m)))
         temperature_c = float(self.atmosphere.get("temperature_c", site_temperature_c(elevation_m)))
@@ -136,7 +141,9 @@ class SpectroscopyETC:
                 dispersion = float(slitless_dispersion_aa_pix)
             if dispersion <= 0:
                 raise ValueError("Slitless dispersion (Angstrom/pixel) must be positive.")
-            lsf_pixels = np.hypot(seeing / plate_scale, float(slitless_intrinsic_fwhm_pix))
+            seeing_lsf = (float(effective_seeing_arcsec(seeing, dispersion_reference_aa, airmass))
+                          if seeing_scaling else seeing)
+            lsf_pixels = np.hypot(seeing_lsf / plate_scale, float(slitless_intrinsic_fwhm_pix))
             if lsf_pixels <= 0:
                 raise ValueError("Slitless intrinsic FWHM must be non-negative.")
             if include_atmospheric_dispersion:
@@ -193,6 +200,11 @@ class SpectroscopyETC:
         extraction_height_arcsec = float(extraction_height_arcsec)
         if extraction_height_arcsec <= 0:
             raise ValueError("Extraction height must be positive.")
+        # Per-wavelength seeing for the light-loss integrals; the extraction
+        # geometry (fixed number of pixels the observer sums over) stays on
+        # the reference seeing.
+        seeing_eff = (effective_seeing_arcsec(seeing, wave.to_value(u.AA), airmass)
+                      if seeing_scaling else np.full(wave.size, seeing))
         sky_mag = float(self.sky_model.get("sky_mag", self.sky_model.get("sky_mag_ab_arcsec2")))
         sky_zero_point_jy = float(self.sky_model.get("sky_zero_point_jy", 3631.0))
         if mode == "slit":
@@ -211,9 +223,9 @@ class SpectroscopyETC:
                 dispersion_offsets = np.zeros(wave.size)
             # Width is the slit loss; height is the finite cross-dispersion
             # extraction loss.  Both dimensions contribute sky area.
-            source_fraction = (psf_slit_throughput(slit_width_arcsec, seeing, psf_model,
+            source_fraction = (psf_slit_throughput(slit_width_arcsec, seeing_eff, psf_model,
                                                    moffat_beta, offset_arcsec=dispersion_offsets)
-                               * psf_slit_throughput(extraction_height_arcsec, seeing,
+                               * psf_slit_throughput(extraction_height_arcsec, seeing_eff,
                                                      psf_model, moffat_beta))
             sky_area = slit_width_arcsec * extraction_height_arcsec
             spatial_pixels = max(extraction_height_arcsec / plate_scale, 1.0)
@@ -226,7 +238,7 @@ class SpectroscopyETC:
                                             else slitless_extraction_width_arcsec)
             if cross_dispersion_height <= 0:
                 raise ValueError("Slitless cross-dispersion extraction must be positive.")
-            source_fraction = psf_slit_throughput(cross_dispersion_height, seeing,
+            source_fraction = psf_slit_throughput(cross_dispersion_height, seeing_eff,
                                                   psf_model, moffat_beta)
             spatial_pixels = max(cross_dispersion_height / plate_scale, 1.0)
             sky_area = (dispersion_pixels_per_resel * plate_scale) * cross_dispersion_height
@@ -273,12 +285,16 @@ class SpectroscopyETC:
         source_e = source_rates * t_exp_s
         sky_e = sky_rates * t_exp_s
         dark_e = self.detector.dark_current_e_s_pix * n_pixels * t_exp_s
+        # Generic extra background per pixel (detector glow, stray light,
+        # ghosting): a catch-all Poisson term (cf. ETC-42 ExtraBackgroundNoise).
+        extra_bg_rate = float(self.sky_model.get("extra_background_e_s_pixel", 0.0))
+        extra_bg_e = extra_bg_rate * n_pixels * t_exp_s
         scintillation_var = scintillation_variance_e2(
             source_e, float(self.telescope["diameter_mm"]), airmass, elevation_m, t_exp_s)
         digitization_var = n_pixels * digitization_noise_e(self.detector.gain_e_adu)**2
         snrs = source_e / np.sqrt(np.maximum(
             source_e + sky_e + dark_e + n_pixels * self.detector.read_noise_e**2
-            + scintillation_var + digitization_var, 1e-300))
+            + scintillation_var + digitization_var + extra_bg_e, 1e-300))
         # Cayrel (1988) equivalent-width uncertainty: sigma(EW) =
         # 1.5 sqrt(FWHM dx) / (S/N per pixel), with the resolution element as
         # the line FWHM and dx the dispersion-pixel width.  Reported in mA.
@@ -289,9 +305,9 @@ class SpectroscopyETC:
         # LSF along dispersion and the selected PSF model across it.
         sigma_disp_pix = dispersion_pixels_per_resel / 2.354820045
         peak_dispersion_fraction = erf(0.5 / (np.sqrt(2.0) * sigma_disp_pix))
-        peak_spatial_fraction = psf_slit_throughput(plate_scale, seeing, psf_model, moffat_beta)
+        peak_spatial_fraction = psf_slit_throughput(plate_scale, seeing_eff, psf_model, moffat_beta)
         peak_e = (source_e_unextracted * peak_dispersion_fraction * peak_spatial_fraction + sky_e / n_pixels
-                  + self.detector.dark_current_e_s_pix * t_exp_s)
+                  + self.detector.dark_current_e_s_pix * t_exp_s + extra_bg_rate * t_exp_s)
         peak_rate_e_s = peak_e / t_exp_s
         saturation_limit_e = min(self.detector.full_well_e, self.detector.max_electrons)
         max_unsaturated_exptime_s = np.divide(saturation_limit_e, peak_rate_e_s,

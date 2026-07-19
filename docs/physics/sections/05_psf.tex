@@ -59,3 +59,26 @@ dispersion and spatial couplings. Figure~\ref{fig:psf} compares the models.
   centred coupling and soften the decentring penalty.}
   \label{fig:psf}
 \end{figure}
+
+\subsection{Wavelength and airmass dependence of the seeing}
+\label{sec:seeing-scaling}
+
+The seeing FWHM is not a constant of the night: Kolmogorov turbulence gives
+a Fried parameter $r_0 \propto \lambda^{6/5}(\cos z)^{3/5}$ and hence a
+seeing FWHM $\propto \lambda/r_0$,
+\begin{equation}
+  \mathrm{FWHM}(\lambda, X) \;=\; s_{V,\rm zenith}\;
+  X^{0.6}\;\Big(\frac{\lambda}{5000\,\text{\AA}}\Big)^{-0.2},
+  \label{eq:seeing-scaling}
+\end{equation}
+where $s_{V,\rm zenith}$ is the entered zenith seeing in $V$ and $X$ the
+airmass. This is the exact form used by ETC-42
+\citep[CeSAM/LAM,][\code{calculator/psf/Seeing.java}]{etc42}. As an
+optional mode, \spetc{} applies Eq.~(\ref{eq:seeing-scaling}) per wavelength
+in the spectroscopic slit and extraction couplings (so blue light suffers
+larger losses than red through the same slit), and at the observing band's
+pivot wavelength in photometry. Because the airmass factor is evaluated per
+time sample, the whole-night time series then correctly shows the seeing ---
+and the losses that follow from it --- degrading as the target sets. The
+mode is off by default, leaving the seeing flat; when it is on, the entered
+value is by definition the zenith $V$ seeing.

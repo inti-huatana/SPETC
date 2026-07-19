@@ -53,8 +53,15 @@ Read            & $N_{\rm pix}\sigma_R^2$ & per frame & --- \\
 Scintillation   & $(S\,\sigma_{\rm scint}/I)^2$ & $\propto t^{1}$\,$^{a}$ &
 \citet{young1967,osborn2015} \\
 Quantization    & $N_{\rm pix}\,g^2/12$ & per frame & \citet{janesick2001} \\
+Extra background & $\dot b\,N_{\rm pix}\,t$ & $\propto t\,N_{\rm pix}$ & \citet{etc42} \\
 \bottomrule
 \end{tabular}
+
+\smallskip
+{\footnotesize The \emph{extra background} $\dot b$ [e$^-$/s/pixel] is an
+optional catch-all Poisson term for detector glow, stray/scattered light or
+ghosting not covered by the sky model, adopted from ETC-42's
+\code{ExtraBackgroundNoise}; it also enters the peak-pixel prediction.}
 
 \smallskip
 {\footnotesize $^{a}$ $S \propto t$ while $\sigma_{\rm scint}/I \propto

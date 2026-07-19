@@ -48,8 +48,14 @@ reading} in $V$ mag/arcsec$^2$, with a \textbf{Bortle class} preset that
 fills a typical value; band colours and the Moon model are applied on
 top); and the \textbf{PSF model} (\code{gaussian} or \code{moffat} with
 its $\beta$; Moffat reproduces the wings of real star images and is
-recommended). \textsf{Save/Load instrument profile} stores the whole column
-as a portable JSON with its QE and response curves.
+recommended); an optional \textbf{seeing-scaling} checkbox that makes the
+seeing vary with wavelength and airmass (Kolmogorov turbulence: blue light
+more blurred than red, and worse as the target sets --- with it ticked the
+value you enter is the zenith $V$ seeing); and an optional \textbf{extra
+background} in e$^-$/s/pixel, a catch-all for detector glow, stray light or
+ghosting that raises the background noise and the peak-pixel prediction.
+\textsf{Save/Load instrument profile} stores the whole column as a portable
+JSON with its QE and response curves.
 
 \subsection{Calculation settings}
 

@@ -236,11 +236,14 @@ FWHM_TO_SIGMA = 2.354820045
 
 
 def _moffat_alpha(seeing_arcsec, beta):
-    """Moffat core radius alpha from the FWHM: FWHM = 2 alpha sqrt(2^(1/beta) - 1)."""
+    """Moffat core radius alpha from the FWHM: FWHM = 2 alpha sqrt(2^(1/beta) - 1).
+
+    ``seeing_arcsec`` may be a scalar or an array (wavelength-dependent seeing).
+    """
     beta = float(beta)
     if beta <= 1.0:
         raise ValueError("Moffat beta must exceed 1 for a finite total flux.")
-    return float(seeing_arcsec) / (2.0 * np.sqrt(2.0 ** (1.0 / beta) - 1.0))
+    return np.asarray(seeing_arcsec, dtype=float) / (2.0 * np.sqrt(2.0 ** (1.0 / beta) - 1.0))
 
 
 def psf_encircled_energy(radius_arcsec, seeing_arcsec, psf_model="gaussian", moffat_beta=2.5):
@@ -272,20 +275,21 @@ def psf_slit_throughput(width_arcsec, seeing_arcsec, psf_model="gaussian", moffa
     throughput uses its CDF with no numerical integration.
     ``offset_arcsec`` decentres the PSF (e.g. atmospheric-dispersion drift).
     """
-    if width_arcsec <= 0 or seeing_arcsec <= 0:
+    seeing = np.asarray(seeing_arcsec, dtype=float)
+    if width_arcsec <= 0 or np.any(seeing <= 0):
         raise ValueError("Slit width and seeing must be positive.")
     half = 0.5 * float(width_arcsec)
     offset = np.abs(np.asarray(offset_arcsec, dtype=float))
     model = str(psf_model).strip().lower()
     if model == "gaussian":
         from scipy.special import erf
-        sigma = seeing_arcsec / FWHM_TO_SIGMA
+        sigma = seeing / FWHM_TO_SIGMA
         scale = np.sqrt(2.0) * sigma
         result = 0.5 * (erf((half - offset) / scale) + erf((half + offset) / scale))
     elif model == "moffat":
         from scipy.stats import t as student_t
         beta = float(moffat_beta)
-        alpha = _moffat_alpha(seeing_arcsec, beta)
+        alpha = _moffat_alpha(seeing, beta)
         nu = 2.0 * beta - 2.0
         scale = alpha / np.sqrt(nu)
         result = (student_t.cdf((half - offset) / scale, df=nu)

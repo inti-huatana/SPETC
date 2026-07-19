@@ -16,9 +16,19 @@ Pure functions, no state: \code{scintillation\_fractional\_rms} /
 \code{scintillation\_variance\_e2} (Young 1967 law),
 \code{scintillation\_variance\_rate\_e2\_s} (the same variance expressed
 as a time-linear rate, $(\dot S C)^2/2$, so closed-form solvers can absorb
-it as an extra Poisson-like term), \code{digitization\_noise\_e}
-($g/\sqrt{12}$), \code{refractive\_index\_minus\_one} and
-\code{differential\_refraction\_arcsec} (Filippenko 1982).
+it as an extra Poisson-like term), \code{effective\_seeing\_arcsec} (the
+ETC-42 Kolmogorov seeing scaling $X^{0.6}(\lambda/5000)^{-0.2}$, array-safe
+in wavelength), \code{digitization\_noise\_e} ($g/\sqrt{12}$),
+\code{refractive\_index\_minus\_one} and
+\code{differential\_refraction\_arcsec} (Filippenko 1982). Two optional
+inputs the engines read from their context dictionaries pair with these:
+\code{atmosphere["seeing\_wavelength\_scaling"]} (bool; turns the seeing
+scaling on, per-wavelength in spectroscopy and at the band pivot in
+photometry --- \code{psf\_slit\_throughput}/\code{\_moffat\_alpha} are
+array-safe in the seeing argument to support it) and
+\code{sky\_model["extra\_background\_e\_s\_pixel"]} (the ETC-42-style
+catch-all background, added to the noise budget and the peak pixel in both
+engines).
 
 \subsection{\code{etc\_physics.py}}
 \code{magnitude\_f\_lambda} (zero-point $\flam$), \code{synthetic\_magnitude}

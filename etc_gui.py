@@ -369,6 +369,15 @@ class ETCGUI(tk.Tk):
                   foreground="gray35", wraplength=300, justify="left").grid(row=8, column=0, columnspan=2, sticky="w")
         self.psf_model_var = self._var("psf_model", "gaussian")
         self.moffat_beta_var = self._var("moffat_beta", "2.5")
+        self.seeing_scaling_var = self._var("seeing_wavelength_scaling", "0")
+        ttk.Checkbutton(f, text="Scale seeing with wavelength and airmass "
+                                "(entered seeing = zenith V)", variable=self.seeing_scaling_var,
+                        onvalue="1", offvalue="0").grid(row=9, column=0, columnspan=2, sticky="w")
+        self.extra_background_var = self._var("extra_background_e_s_pixel", "0")
+        self._entry(f, 10, "Extra background (e-/s/pixel):", self.extra_background_var)
+        ttk.Label(f, text="Catch-all background per pixel: detector glow, stray/scattered light, "
+                          "ghosting. 0 = none.", foreground="gray35", wraplength=300,
+                  justify="left").grid(row=11, column=0, columnspan=2, sticky="w")
         ttk.Label(f, text="PSF model:").grid(row=3, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.psf_model_var, state="readonly",
                      values=("gaussian", "moffat")).grid(row=3, column=1, sticky="ew")
@@ -1643,7 +1652,8 @@ class ETCGUI(tk.Tk):
                 "transmission_curve": transmission_curve,
                 "psf_model": self.psf_model_var.get(),
                 "moffat_beta": float(self.moffat_beta_var.get()),
-                "elevation_m": float(self.elev_var.get())}
+                "elevation_m": float(self.elev_var.get()),
+                "seeing_wavelength_scaling": self.seeing_scaling_var.get() == "1"}
 
     def _source_geometry_kwargs(self):
         geometry = self.source_geometry_var.get().strip().lower()
@@ -1653,6 +1663,13 @@ class ETCGUI(tk.Tk):
     def _sky_models_for_track(self, track, vega_profile, ra_deg, dec_deg):
         """Build observed ground-sky inputs for every planning time sample."""
         aperture = float(self.aperture_var.get())
+        extra_bg = float(self.extra_background_var.get() or 0.0)
+        models = self._sky_models_core(track, vega_profile, ra_deg, dec_deg, aperture)
+        for model in models:
+            model["extra_background_e_s_pixel"] = extra_bg
+        return models
+
+    def _sky_models_core(self, track, vega_profile, ra_deg, dec_deg, aperture):
         if self.sky_model_var.get() == "fixed_ab":
             fixed = {"sky_mag": float(self.sky_var.get()), "sky_zero_point_jy": 3631.0,
                      "sky_at_telescope": True, "aperture_radius_arcsec": aperture}

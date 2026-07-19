@@ -434,3 +434,12 @@ Krisciunas & Schaefer scattering function, position-dependent sky, Pickering
 airmass, parallactic angle, Moffat PSF, Filippenko dispersion, scintillation
 and quantization noise scales, Star Analyser dispersion and extended-source
 photometry.
+
+## RNAAS article
+
+`docs/rnaas/` contains a Research Notes of the AAS manuscript presenting the
+tool: `spetc_rnaas_aastex.tex` is the submission-ready AASTeX 6.3.1 source
+(compile where `aastex631.cls` is available, e.g. the AAS submission system),
+and `main.tex`/`docs/SPETC_rnaas_preprint.pdf` is an identical-text preprint
+rendering that compiles with the bundled `compile.sh`. Body text is ~590
+words, one figure — within the RNAAS limits (1000 words, one figure).

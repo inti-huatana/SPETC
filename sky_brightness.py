@@ -67,12 +67,32 @@ def van_rhijn_factor(zenith_dist_deg):
     return 1.0 / np.sqrt(1.0 - (ratio * np.sin(z)) ** 2)
 
 
-def zodiacal_s10(ecliptic_lat_deg):
-    """Benn & Ellison zodiacal-light brightness in S10, symmetric in beta."""
+def zodiacal_elongation_factor(solar_elongation_deg):
+    """Brightening of the zodiacal light towards the Sun along the ecliptic.
+
+    The Benn & Ellison latitude law describes the anti-solar/high-elongation
+    sky.  Towards the Sun the zodiacal brightness rises steeply; the Leinert
+    et al. (1998, A&AS 127, 1) tables at beta = 0 are well approximated
+    between elongation 30 and 110 deg by a power law ~ epsilon^-2.3,
+    flattening beyond ~110 deg.  The factor is 1 at large elongation and
+    ~4 at 60 deg; below 30 deg the line of sight is unobservable and the
+    factor is held at its 30 deg value.
+    """
+    eps = float(np.clip(solar_elongation_deg, 30.0, 180.0))
+    if eps >= 110.0:
+        return 1.0
+    return (eps / 110.0) ** (-2.3)
+
+
+def zodiacal_s10(ecliptic_lat_deg, solar_elongation_deg=180.0):
+    """Benn & Ellison zodiacal-light brightness in S10, symmetric in beta,
+    scaled by the solar-elongation factor (1 at the anti-solar sky)."""
     abs_beta = np.abs(float(ecliptic_lat_deg))
     if abs_beta < 60.0:
-        return 140.0 - 90.0 * np.sin(np.radians(abs_beta))
-    return 60.0
+        base = 140.0 - 90.0 * np.sin(np.radians(abs_beta))
+    else:
+        base = 60.0
+    return base * zodiacal_elongation_factor(solar_elongation_deg)
 
 
 def starlight_s10(galactic_lat_deg):
@@ -80,17 +100,47 @@ def starlight_s10(galactic_lat_deg):
     return 100.0 * np.exp(-np.abs(float(galactic_lat_deg)) / 10.0)
 
 
+def line_of_sight_airmass(zenith_dist_deg):
+    """Kasten & Young (1989) tropospheric airmass of the line of sight.
+
+    X = [cos z + 0.50572 (96.07995 - z)^-1.6364]^-1, finite at the horizon
+    (X ~ 38), used for the extinction suffered by light emitted above the
+    troposphere (airglow) on its way down to the observer.
+    """
+    z = float(np.clip(zenith_dist_deg, 0.0, 90.0))
+    return 1.0 / (np.cos(np.radians(z)) + 0.50572 * (96.07995 - z) ** (-1.6364))
+
+
+def airglow_extinction_factor(zenith_dist_deg, v_extinction_mag=0.15):
+    """Attenuation of the airglow along its slant path through the troposphere.
+
+    The van Rhijn factor lengthens the emitting path, but the emitted light
+    then crosses the lower atmosphere at the same slant: the flux factor is
+    10^(-0.4 k (X - 1)), with X the Kasten-Young line-of-sight airmass and k
+    the V extinction coefficient.  Near the horizon this partially cancels
+    the van Rhijn enhancement, as observed (the raw factor ~6 at z = 90 deg
+    is never realized in nature).
+    """
+    x = line_of_sight_airmass(zenith_dist_deg)
+    return 10.0 ** (-0.4 * float(v_extinction_mag) * (x - 1.0))
+
+
 def dark_sky_position_correction_mag(zenith_dist_deg, ecliptic_lat_deg, galactic_lat_deg,
-                                     solar_activity=0.8):
+                                     solar_activity=0.8, solar_elongation_deg=180.0,
+                                     v_extinction_mag=0.15):
     """Magnitude correction of the dark sky relative to the tabulated values.
 
-    Combines van Rhijn airglow (scaled by the solar-cycle activity), zodiacal
-    light at the target's ecliptic latitude and integrated starlight at its
-    galactic latitude, normalised to the dark reference composition of the
-    U--K table.  Negative values brighten the sky.
+    Combines van Rhijn airglow (scaled by the solar-cycle activity and
+    attenuated by the slant-path tropospheric extinction), zodiacal light at
+    the target's ecliptic latitude and solar elongation, and integrated
+    starlight at its galactic latitude, normalised to the dark reference
+    composition of the U--K table.  Negative values brighten the sky.
     """
-    qair = (145.0 + 130.0 * (float(solar_activity) - 0.8) / 1.2) * float(van_rhijn_factor(zenith_dist_deg))
-    q3 = qair + zodiacal_s10(ecliptic_lat_deg) + starlight_s10(galactic_lat_deg)
+    qair = ((145.0 + 130.0 * (float(solar_activity) - 0.8) / 1.2)
+            * float(van_rhijn_factor(zenith_dist_deg))
+            * airglow_extinction_factor(zenith_dist_deg, v_extinction_mag))
+    q3 = (qair + zodiacal_s10(ecliptic_lat_deg, solar_elongation_deg)
+          + starlight_s10(galactic_lat_deg))
     return -2.5 * np.log10(q3 / Q_DARK_REFERENCE_S10)
 
 
@@ -136,6 +186,9 @@ def solar_cycle_phase(year):
     return fase_sol
 
 
+MOON_MEAN_DISTANCE_KM = 384400.0
+
+
 def sky_brightness_total(
     year, month, day, hour, minute=0,
     ecliptic_lat_deg=90.0, galactic_lat_deg=90.0,
@@ -146,6 +199,8 @@ def sky_brightness_total(
     include_sun_twilight=False,
     sun_altitude_deg=-90,
     target_zenith_dist_deg=None,
+    solar_elongation_deg=180.0,
+    moon_distance_km=MOON_MEAN_DISTANCE_KM,
 ):
     """
     Calculate 9-band sky brightness [mag/arcsec^2].
@@ -165,8 +220,10 @@ def sky_brightness_total(
     if target_zenith_dist_deg is None:
         secz = max(float(airmass_target), 1.0)
         target_zenith_dist_deg = np.degrees(np.arccos(np.clip(1.0 / secz, 0.0, 1.0)))
-    qair = (145.0 + 130.0 * (fase_sol - 0.8) / 1.2) * float(van_rhijn_factor(target_zenith_dist_deg))
-    qzod = zodiacal_s10(ecliptic_lat_deg)
+    qair = ((145.0 + 130.0 * (fase_sol - 0.8) / 1.2)
+            * float(van_rhijn_factor(target_zenith_dist_deg))
+            * airglow_extinction_factor(target_zenith_dist_deg, v_extinction_mag))
+    qzod = zodiacal_s10(ecliptic_lat_deg, solar_elongation_deg)
     qstar = starlight_s10(galactic_lat_deg)
     q3 = qair + qzod + qstar
 
@@ -180,6 +237,10 @@ def sky_brightness_total(
     if include_moon and moon_separation_deg < 180:
         alpha = float(lunar_phase_deg)  # K&S phase angle alpha: 0 = full moon
         istar = 10.0 ** (-0.4 * (3.84 + 0.026 * abs(alpha) + 4.0e-9 * alpha ** 4))
+        # Krisciunas & Schaefer include the Moon's distance: the illuminance
+        # scales as (mean distance / distance)^2, a +-15% modulation over the
+        # anomalistic month.
+        istar *= (MOON_MEAN_DISTANCE_KM / max(float(moon_distance_km), 1.0)) ** 2
         fr = float(moonlight_scattering_function(moon_separation_deg))
         delta_ext = (10.0 ** (-0.4 * v_extinction_mag * airmass_moon)
                      * (1.0 - 10.0 ** (-0.4 * v_extinction_mag * airmass_target)))

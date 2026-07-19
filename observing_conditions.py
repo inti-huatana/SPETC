@@ -82,6 +82,43 @@ def effective_seeing_arcsec(seeing_zenith_v_arcsec, wavelength_aa, airmass,
     return seeing * scale
 
 
+# Parametric telluric absorption bands: centre [A], Gaussian sigma [A],
+# zenith depth (fractional absorption at band centre, X = 1) and curve-of-
+# growth exponent p in depth(X) = depth * X^p (p = 1 for optically thin
+# H2O lines, p ~ 0.55 for the saturated O2 bands).  Values approximate a
+# low-resolution smoothing of a sea-level transmission model; a measured
+# site spectrum can replace this model where per-line accuracy matters.
+TELLURIC_BANDS = (
+    # (centre_aa, sigma_aa, zenith_depth, growth_exponent)
+    (6280.0, 25.0, 0.06, 0.55),   # O2 gamma band
+    (6870.0, 30.0, 0.35, 0.55),   # O2 B band
+    (7186.0, 60.0, 0.15, 1.0),    # H2O
+    (7605.0, 30.0, 0.75, 0.55),   # O2 A band
+    (8164.0, 70.0, 0.20, 1.0),    # H2O
+    (8946.0, 90.0, 0.35, 1.0),    # H2O
+    (9400.0, 110.0, 0.55, 1.0),   # H2O
+)
+
+
+def telluric_transmission(wavelength_aa, airmass):
+    """Smoothed telluric O2/H2O band transmission at the current airmass.
+
+    Each band is a Gaussian absorption profile of the stated centre, width
+    and zenith depth; the depth grows with airmass as X^p (curve of growth:
+    linear for unsaturated H2O, ~sqrt for the saturated O2 A/B bands).
+    Below ~6200 A the model returns 1 (the visible telluric bands are weak).
+    This is a band-averaged model for S/N budgeting at the ETC's resolution,
+    not a line-by-line radiative transfer.
+    """
+    wave = np.asarray(wavelength_aa, dtype=np.float64)
+    x = max(float(airmass), 1.0)
+    transmission = np.ones_like(wave)
+    for centre, sigma, depth, growth in TELLURIC_BANDS:
+        band_depth = min(depth * x ** growth, 0.98)
+        transmission *= 1.0 - band_depth * np.exp(-0.5 * ((wave - centre) / sigma) ** 2)
+    return np.clip(transmission, 0.0, 1.0)
+
+
 def digitization_noise_e(gain_e_adu):
     """Quantization noise of the ADC in electrons rms per pixel: g/sqrt(12)."""
     gain = float(gain_e_adu)

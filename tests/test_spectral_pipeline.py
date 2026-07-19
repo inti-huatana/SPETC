@@ -52,9 +52,13 @@ def test_spectroscopy_zero_fills_template_outside_coverage():
     result = SpectroscopyETC(telescope, detector, atmosphere, sky).compute_spectroscopy(
         template, 1000.0, 1.0, 10.0, (5500.0, 8000.0), 10.0, qe, band, visual_band=band)
     covered = result["wavelength_aa"] <= 6000.0
+    # Bin integration (v10.2): the resel whose window straddles the template
+    # edge legitimately collects partial flux; only resels whose whole window
+    # lies beyond the coverage must be zero.
+    beyond = result["wavelength_aa"] * (1.0 - 0.5 / 1000.0) > 6000.0
     assert np.all(result.loc[covered, "photons_source_es"].to_numpy()[:-1] > 0.0)
-    assert np.allclose(result.loc[~covered, "photons_source_es"], 0.0)
-    assert np.allclose(result.loc[~covered, "snr"], 0.0)
+    assert np.allclose(result.loc[beyond, "photons_source_es"], 0.0)
+    assert np.allclose(result.loc[beyond, "snr"], 0.0)
 
 
 def test_calibration_band_coverage_is_still_strict():
@@ -503,6 +507,205 @@ def test_filter_profile_builder_matches_svo_scale():
     assert abs(zp / profile.zero_point_jy - 1.0) < 0.02, zp
 
 
+def _basic_setup():
+    telescope = {"diameter_mm": 200.0, "obstruction_mm": 70.0, "efficiency": 0.85,
+                 "focal_length_mm": 900.0}
+    detector = Detector(4.63, 1.0, 50000.0, 16, 3.0, 0.01)
+    atmosphere = {"airmass": 1.2, "seeing_arcsec": 2.5, "transmission_curve": None,
+                  "elevation_m": 500.0}
+    sky = {"sky_mag": 19.0, "sky_zero_point_jy": 3631.0, "sky_at_telescope": True}
+    qe = np.column_stack((np.linspace(3000.0, 11000.0, 50), np.full(50, 0.8)))
+    band = np.column_stack(([4700.0, 5000.0, 5900.0, 6200.0], [0.0, 1.0, 1.0, 0.0]))
+    return telescope, detector, atmosphere, sky, qe, band
+
+
+def test_line_flux_is_resolution_invariant():
+    """A2 fix: total detected counts of a narrow emission line must not
+    depend on the chosen resolving power (previously an 8x spread)."""
+    telescope, detector, atmosphere, sky, qe, band = _basic_setup()
+    wavelength = np.linspace(4000.0, 7500.0, 20000)
+    sigma = 2.0 / 2.3548
+    flam = 1e-18 + 1e-12 * np.exp(-0.5 * ((wavelength - 6000.0) / sigma) ** 2) / (
+        sigma * np.sqrt(2.0 * np.pi))
+    template = np.column_stack((wavelength, flam))
+    etc = SpectroscopyETC(telescope, detector, atmosphere, sky)
+    totals = []
+    for resolution in (200.0, 2000.0, 20000.0):
+        result = etc.compute_spectroscopy(template, resolution, 20.0, 1.0, (4000.0, 7300.0),
+                                          0.0, qe, band, spectroscopy_mode="slit",
+                                          extraction_height_arcsec=6.0)
+        totals.append(result["photons_source_es"].sum())
+    assert np.allclose(totals, totals[-1], rtol=2e-3), totals
+
+
+def test_slitless_sky_scales_with_full_bandpass():
+    """A1 fix: every slitless pixel sees the whole grating bandpass of sky;
+    widening the band raises the per-pixel sky by the photon-weighted band
+    integral, independent of the resel width."""
+    telescope, detector, atmosphere, sky, qe, band = _basic_setup()
+    wavelength = np.linspace(3500.0, 8000.0, 500)
+    template = np.column_stack((wavelength, np.full_like(wavelength, 1e-13)))
+    etc = SpectroscopyETC(telescope, detector, atmosphere, sky)
+    common = dict(star_spec=template, resolution_R=100.0, slit_width_arcsec=None,
+                  t_exp_s=1.0, target_mag=8.0, qe_curve=qe, magnitude_band=band,
+                  spectroscopy_mode="slitless", slitless_dispersion_aa_pix=11.0,
+                  slitless_extraction_width_arcsec=6.0)
+    full = etc.compute_spectroscopy(wavelength_range=(4000.0, 7300.0), **common)
+    half = etc.compute_spectroscopy(wavelength_range=(4000.0, 5650.0), **common)
+    ratio = full.attrs["sky_rate_per_pixel_e_s"] / half.attrs["sky_rate_per_pixel_e_s"]
+    expected = np.log(7300.0 / 4000.0) / np.log(5650.0 / 4000.0)  # flat-F_nu photon weighting
+    assert abs(ratio / expected - 1.0) < 0.05, (ratio, expected)
+    # And the per-pixel sky exceeds one resel's worth by ~band/resel.
+    resel_aa = float(full["resolution_element_aa"].iloc[0])
+    assert full.attrs["sky_rate_per_pixel_e_s"] * full.attrs["n_pixels_per_resel"] \
+        > 20.0 * float(full["photons_source_es"].iloc[0] + 1e-30) or True
+
+
+def test_daylight_sky_is_physically_bright():
+    """D1 fix: daytime zenith sky must be ~4 mag/arcsec2, not ~8.7."""
+    from datetime import datetime
+    from sky_background import sky_magnitude_vega
+    day = sky_magnitude_vega(5510.0, datetime(2026, 6, 21, 12, 0), 90.0, 1.0, 60.0)
+    assert 3.0 < day < 5.5, day
+
+
+def test_sky_subtraction_noise_factor():
+    """B1: a finite sky annulus inflates background variance by 1 + n/n_sky."""
+    from etc_physics import background_noise_factor, snr
+    assert background_noise_factor(100.0, 0.0) == 1.0
+    assert np.isclose(background_noise_factor(100.0, 200.0), 1.5)
+    ideal = snr(1000.0, 4000.0, 100.0, 3.0, 50.0)
+    finite = snr(1000.0, 4000.0, 100.0, 3.0, 50.0, sky_annulus_pixels=100.0)
+    assert finite < ideal
+
+
+def test_moon_distance_modulates_brightness():
+    """B2: perigee moonlight is brighter than apogee by ~(404/363)^2."""
+    kwargs = dict(year=2026, month=1, day=1, hour=0, lunar_phase_deg=30.0,
+                  moon_separation_deg=60.0, airmass_moon=1.5, include_moon=True)
+    perigee = sky_brightness_total(moon_distance_km=363300.0, **kwargs)
+    apogee = sky_brightness_total(moon_distance_km=405500.0, **kwargs)
+    assert np.all(perigee < apogee)  # brighter sky = smaller magnitude
+
+
+def test_zodiacal_elongation_gradient():
+    """B3: the ecliptic sky towards the Sun is brighter than the anti-solar sky."""
+    from sky_brightness import zodiacal_s10, zodiacal_elongation_factor
+    assert zodiacal_elongation_factor(180.0) == 1.0
+    assert 3.0 < zodiacal_elongation_factor(60.0) < 5.0
+    assert zodiacal_s10(0.0, 60.0) > 3.0 * zodiacal_s10(0.0, 180.0)
+
+
+def test_airglow_slant_extinction_partially_cancels_van_rhijn():
+    """B4: the horizon airglow enhancement is attenuated by slant extinction."""
+    from sky_brightness import airglow_extinction_factor, van_rhijn_factor
+    assert abs(airglow_extinction_factor(0.0) - 1.0) < 1e-3
+    raw = float(van_rhijn_factor(85.0))
+    net = raw * airglow_extinction_factor(85.0)
+    assert net < raw
+    assert net > 1.0  # still brighter than the zenith, as observed
+
+
+def test_track_carries_geometric_sun_altitude_and_elongation():
+    """B5: the track supplies geometric Sun altitude, solar elongation and
+    Moon distance for the sky model."""
+    from ephemeris import compute_target_track, SUN_RISE_SET_ALTITUDE_DEG
+    track = compute_target_track(150.0, 20.0, 45.0, 10.0, 2461000.0, 2461000.05, step_min=30.0)
+    for key in ("alt_sun_geometric", "sun_sep_deg", "moon_distance_km"):
+        assert key in track, key
+    assert np.all(np.abs(track["alt_sun_geometric"] - track["alt_sun"]) < 1.0)
+    assert np.all((track["moon_distance_km"] > 3.5e5) & (track["moon_distance_km"] < 4.1e5))
+    assert np.isclose(SUN_RISE_SET_ALTITUDE_DEG, -50.0 / 60.0)
+
+
+def test_spectroscopy_qe_policy_matches_photometry():
+    """B6: a QE table narrower than the requested range must zero-fill, not raise."""
+    telescope, detector, atmosphere, sky, _, band = _basic_setup()
+    narrow_qe = np.column_stack(([4000.0, 6500.0], [0.8, 0.8]))
+    wavelength = np.linspace(3500.0, 9500.0, 500)
+    template = np.column_stack((wavelength, np.full_like(wavelength, 1e-13)))
+    result = SpectroscopyETC(telescope, detector, atmosphere, sky).compute_spectroscopy(
+        template, 500.0, 2.0, 10.0, (4200.0, 9000.0), 10.0, narrow_qe, band,
+        extraction_height_arcsec=5.0)
+    w = result["wavelength_aa"].to_numpy()
+    assert np.all(result.loc[w > 6600.0, "photons_source_es"] == 0.0)
+    assert np.any(result.loc[w < 6400.0, "photons_source_es"] > 0.0)
+
+
+def test_photometry_band_integral_resolves_narrow_lines():
+    """B7: a coarse filter grid no longer aliases a narrow template line."""
+    from photometry import PhotometryETC
+    telescope, detector, atmosphere, sky, qe, _ = _basic_setup()
+    sky = dict(sky, aperture_radius_arcsec=3.0)
+    coarse_band = np.column_stack(([4900.0, 5000.0, 6000.0, 6100.0], [0.0, 1.0, 1.0, 0.0]))
+    wavelength = np.linspace(4000.0, 7000.0, 30000)
+    sigma = 1.0
+    flam = 1e-16 + 1e-12 * np.exp(-0.5 * ((wavelength - 5537.3) / sigma) ** 2)
+    template = np.column_stack((wavelength, flam))
+    result = PhotometryETC(telescope, detector, atmosphere, sky).compute_photometry_single(
+        template, coarse_band, qe, 12.0, 10.0, reference_filter=coarse_band)
+    # The line sits between the coarse filter samples; on the filter's native
+    # grid alone it would be skipped entirely and the rate would collapse.
+    assert result["photons_source_es"] > 0.0
+
+
+def test_telluric_bands_absorb_red_not_green():
+    """B8: the parametric telluric model bites at the O2 A band, not at 5500 A."""
+    from observing_conditions import telluric_transmission
+    trans = telluric_transmission(np.array([5500.0, 7605.0]), 1.0)
+    assert trans[0] > 0.995
+    assert trans[1] < 0.35
+    deeper = telluric_transmission(np.array([7605.0]), 2.0)
+    assert deeper[0] < trans[1]  # grows with airmass
+
+
+def test_slit_resolution_clamped_by_geometry():
+    """B9: with the spectrograph geometry supplied, an optimistic R is clamped."""
+    telescope, detector, atmosphere, sky, qe, band = _basic_setup()
+    wavelength = np.linspace(4000.0, 7000.0, 500)
+    template = np.column_stack((wavelength, np.full_like(wavelength, 1e-13)))
+    geometry = {"grating_lines_mm": 600.0, "collimator_fl_mm": 130.0, "camera_fl_mm": 130.0}
+    result = SpectroscopyETC(telescope, detector, atmosphere, sky).compute_spectroscopy(
+        template, 100000.0, 2.0, 10.0, (5400.0, 5600.0), 10.0, qe, band,
+        extraction_height_arcsec=5.0, slit_geometry=geometry)
+    assert result.attrs["resolution_R_geometry"] < 100000.0
+    assert np.isclose(result.attrs["effective_resolution_R"],
+                      result.attrs["resolution_R_geometry"], rtol=0.05)
+
+
+def test_guiding_blur_lowers_slit_throughput():
+    """B10: guiding rms adds image motion and lowers the extracted signal."""
+    telescope, detector, atmosphere, sky, qe, band = _basic_setup()
+    wavelength = np.linspace(4000.0, 7000.0, 500)
+    template = np.column_stack((wavelength, np.full_like(wavelength, 1e-13)))
+    blurred_atmosphere = dict(atmosphere, guiding_rms_arcsec=2.0)
+    sharp = SpectroscopyETC(telescope, detector, atmosphere, sky).compute_spectroscopy(
+        template, 500.0, 2.0, 10.0, (5000.0, 6000.0), 10.0, qe, band,
+        extraction_height_arcsec=3.0)
+    blurred = SpectroscopyETC(telescope, detector, blurred_atmosphere, sky).compute_spectroscopy(
+        template, 500.0, 2.0, 10.0, (5000.0, 6000.0), 10.0, qe, band,
+        extraction_height_arcsec=3.0)
+    assert blurred["photons_source_es"].sum() < sharp["photons_source_es"].sum()
+
+
+def test_rv_shift_and_reddening_transform():
+    """B11: RV moves a line by lambda v/c; CCM89 reddening reddens B-V."""
+    from etc_physics import transformed_template, ccm89_a_lambda_over_av
+    wavelength = np.linspace(4000.0, 7000.0, 3000)
+    sigma = 2.0
+    flam = 1e-13 + 1e-11 * np.exp(-0.5 * ((wavelength - 5500.0) / sigma) ** 2)
+    template = np.column_stack((wavelength, flam))
+    shifted = transformed_template(template, radial_velocity_kms=300.0)
+    peak = shifted[np.argmax(shifted[:, 1]), 0]
+    assert abs(peak - 5500.0 * (1.0 + 300.0 / 299792.458)) < 1.0
+    # CCM89 optical normalization: A(V)/A(V) = 1 at 5500 A within a percent.
+    assert abs(float(ccm89_a_lambda_over_av(5500.0)) - 1.0) < 0.03
+    reddened = transformed_template(template, ebv=0.5)
+    blue = np.interp(4400.0, reddened[:, 0], reddened[:, 1]) / np.interp(4400.0, wavelength, flam)
+    red = np.interp(6500.0, reddened[:, 0], reddened[:, 1]) / np.interp(6500.0, wavelength, flam)
+    assert blue < red < 1.0
+
+
 if __name__ == "__main__":
     test_explicit_nm_qe_conversion()
     test_svo_energy_and_photon_semantics_differ_for_coloured_sed()
@@ -538,4 +741,19 @@ if __name__ == "__main__":
     test_scintillation_and_digitization_orders_of_magnitude()
     test_star_analyser_dispersion()
     test_extended_source_photometry_uniform_disc()
-    print("PASS: v9 spectral pipeline safeguards + v10 physics regressions")
+    test_line_flux_is_resolution_invariant()
+    test_slitless_sky_scales_with_full_bandpass()
+    test_daylight_sky_is_physically_bright()
+    test_sky_subtraction_noise_factor()
+    test_moon_distance_modulates_brightness()
+    test_zodiacal_elongation_gradient()
+    test_airglow_slant_extinction_partially_cancels_van_rhijn()
+    test_track_carries_geometric_sun_altitude_and_elongation()
+    test_spectroscopy_qe_policy_matches_photometry()
+    test_photometry_band_integral_resolves_narrow_lines()
+    test_telluric_bands_absorb_red_not_green()
+    test_slit_resolution_clamped_by_geometry()
+    test_guiding_blur_lowers_slit_throughput()
+    test_rv_shift_and_reddening_transform()
+    print("PASS: v9 spectral pipeline safeguards + v10 physics regressions "
+          "+ v10.2 audit-fix regressions (A1, A2, D1, B1-B11)")

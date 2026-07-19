@@ -15,9 +15,10 @@ import pandas as pd
 import astropy.units as u
 from scipy.special import erf
 
-from etc_physics import (as_angstrom_curve, calibrated_template_magnitude, magnitude_f_lambda,
-                         psf_slit_throughput, collecting_area, atmospheric_transmission,
-                         instrument_transmission)
+from etc_physics import (as_angstrom_curve, background_noise_factor, calibrated_template_magnitude,
+                         magnitude_f_lambda, psf_slit_throughput, collecting_area,
+                         atmospheric_transmission, instrument_transmission, transformed_template,
+                         FWHM_TO_SIGMA)
 from observing_conditions import (differential_refraction_arcsec, digitization_noise_e,
                                   effective_seeing_arcsec, scintillation_variance_e2)
 from astropy.constants import h, c
@@ -106,7 +107,9 @@ class SpectroscopyETC:
                              slitless_grating_distance_mm=None,
                              grating_efficiency=1.0,
                              slit_at_parallactic=True,
-                             include_atmospheric_dispersion=True):
+                             include_atmospheric_dispersion=True,
+                             radial_velocity_kms=0.0, ebv=0.0,
+                             slit_geometry=None):
         if resolution_R <= 0 or t_exp_s <= 0 or pixels_per_resel <= 0:
             raise ValueError("Resolution, exposure time, and sampling must be positive.")
         lo, hi = map(float, wavelength_range)
@@ -117,6 +120,11 @@ class SpectroscopyETC:
             raise ValueError("Spectroscopy mode must be 'slit' or 'slitless'.")
         plate_scale = 206265.0 * (self.detector.pixel_size_um * 1e-3) / float(self.telescope["focal_length_mm"])
         seeing = float(self.atmosphere["seeing_arcsec"])
+        # Guiding/image-motion blur: an rms tracking error sigma_g adds a
+        # Gaussian of FWHM 2.355 sigma_g in quadrature to the seeing FWHM.
+        guiding_rms = float(self.atmosphere.get("guiding_rms_arcsec", 0.0))
+        if guiding_rms > 0.0:
+            seeing = float(np.hypot(seeing, FWHM_TO_SIGMA * guiding_rms))
         psf_model = str(self.atmosphere.get("psf_model", "gaussian"))
         moffat_beta = float(self.atmosphere.get("moffat_beta", 2.5))
         airmass = float(self.atmosphere.get("airmass", 1.0))
@@ -132,6 +140,7 @@ class SpectroscopyETC:
         grating_efficiency = float(grating_efficiency)
         if not 0.0 < grating_efficiency <= 1.0:
             raise ValueError("Grating efficiency must be in (0, 1].")
+        resolution_R_geometry = None
         if mode == "slitless":
             if slitless_grating_lines_mm and slitless_grating_distance_mm:
                 dispersion = grating_dispersion_aa_per_pixel(
@@ -175,6 +184,18 @@ class SpectroscopyETC:
                 resolution_R = float(np.interp(slit_width, curve[:, 0], curve[:, 1]))
                 if resolution_R <= 0:
                     raise ValueError("Calibrated slit resolving power must be positive.")
+            # Engine-side sanity clamp: when the spectrograph geometry is
+            # supplied, the entered R cannot exceed what the slit/seeing and
+            # the grating deliver at the band centre.
+            if slit_geometry:
+                geometry = slit_spectrograph_resolving_power(
+                    0.5 * (lo + hi), float(slit_geometry["grating_lines_mm"]),
+                    float(slit_geometry["collimator_fl_mm"]), float(slit_geometry["camera_fl_mm"]),
+                    float(self.telescope["focal_length_mm"]), float(slit_width_arcsec), seeing,
+                    int(slit_geometry.get("diffraction_order", 1)))
+                resolution_R_geometry = float(geometry["resolving_power"])
+                if resolution_R > resolution_R_geometry:
+                    resolution_R = resolution_R_geometry
             # One sample is one slit-spectrograph resolution element, not one detector pixel.
             n = max(int(np.ceil(resolution_R * np.log(hi / lo))), 2)
             wave = lo * np.exp(np.arange(n) * np.log(hi / lo) / (n - 1)) * u.AA
@@ -182,18 +203,24 @@ class SpectroscopyETC:
             effective_resolution = np.full(n, float(resolution_R))
             dispersion_pixels_per_resel = float(pixels_per_resel)
         reference_filter = magnitude_band if reference_filter is None else reference_filter
+        # Optional radial-velocity shift and CCM89 reddening are applied to
+        # the template *before* calibration: the observed reference magnitude
+        # of a reddened, moving star already contains both effects, so the
+        # transformation changes the template's colours, not its level.
+        star_spec = transformed_template(star_spec, radial_velocity_kms, ebv)
         spec_wave, spec_flam = calibrated_template_magnitude(
             star_spec, target_mag, reference_filter, target_zero_point_jy,
             template_mv0, visual_band, visual_zero_point_jy,
             reference_detector_type, visual_detector_type)
         source_curve = np.column_stack((spec_wave.to_value(u.AA), spec_flam.to_value(spec_flam.unit)))
-        #require_coverage(wave.to_value(u.AA), source_curve, "template spectrum")
-        source_flam = interpolate_zero_filled(wave.to_value(u.AA), source_curve, "template spectrum") * spec_flam.unit
-        qe = interpolate_checked(wave.to_value(u.AA), qe_curve, "QE curve", clip=(0.0, 1.0))
+        # Observing-side curves are zero-filled outside their tabulated
+        # coverage (same policy as photometry): truncation only loses counts,
+        # it never rescales the calibration.
+        qe = interpolate_zero_filled(wave.to_value(u.AA), qe_curve, "QE curve", clip=(0.0, 1.0))
         if observing_filter is None:
             observing_transmission = np.ones(wave.size)
         else:
-            observing_transmission = interpolate_checked(
+            observing_transmission = interpolate_zero_filled(
                 wave.to_value(u.AA), observing_filter, "spectroscopic observing filter", clip=(0.0, 1.0))
         if extraction_height_arcsec is None:
             extraction_height_arcsec = seeing
@@ -249,38 +276,93 @@ class SpectroscopyETC:
         source_fraction = source_fraction * fill
         n_pixels = max(dispersion_pixels_per_resel * spatial_pixels * fill, 1.0)
 
-        # Midpoint integration is accurate for each narrow resolution element
-        # and, unlike an Astropy loop for every bin, remains responsive at
-        # R=100000 across a broad spectral range.
         area = collecting_area(self.telescope)
         efficiency = float(self.telescope.get("efficiency", 1.0))
         if not 0.0 <= efficiency <= 1.0:
             raise ValueError("Telescope efficiency must be in [0, 1].")
+        area_cm2 = area.to_value(u.cm**2)
         atmosphere_trans = atmospheric_transmission(wave, self.atmosphere)
         instrument_trans = instrument_transmission(wave, self.telescope)
-        photon_energy = (h * c / wave).to(u.erg)
-        source_rates_unextracted = (source_flam * observing_transmission * qe * instrument_trans * atmosphere_trans * area * efficiency
-                                    / photon_energy * dlam).to_value(1 / u.s) * grating_efficiency
+        photon_energy_erg = (h * c / wave).to_value(u.erg)
+        wave_aa = wave.to_value(u.AA)
+        dlam_aa = dlam.to_value(u.AA)
+
+        # --- Source: exact per-resel integral of the calibrated template ---
+        # The template is *integrated* over each resolution element instead
+        # of point-sampled at its centre, so total line counts are invariant
+        # under the choice of R (a 2 A emission line yields the same
+        # electrons at R = 300 and R = 20000).  A single cumulative trapezoid
+        # over a fine union grid keeps this O(n) even at R = 100000.
+        edges_lo = np.clip(wave_aa - 0.5 * dlam_aa, lo, hi)
+        edges_hi = np.clip(wave_aa + 0.5 * dlam_aa, lo, hi)
+        template_wave = source_curve[:, 0]
+        inside = (template_wave >= lo) & (template_wave <= hi)
+        fine = np.union1d(np.union1d(template_wave[inside],
+                                     np.concatenate((edges_lo, edges_hi))),
+                          np.linspace(lo, hi, 2048))
+        fine_q = fine * u.AA
+        fine_flam = np.interp(fine, template_wave, source_curve[:, 1], left=0.0, right=0.0)
+        fine_filter = (np.ones(fine.size) if observing_filter is None else
+                       interpolate_zero_filled(fine, observing_filter,
+                                               "spectroscopic observing filter", clip=(0.0, 1.0)))
+        fine_qe = interpolate_zero_filled(fine, qe_curve, "QE curve", clip=(0.0, 1.0))
+        fine_instrument = instrument_transmission(fine_q, self.telescope)
+        fine_atmosphere = atmospheric_transmission(fine_q, self.atmosphere)
+        fine_energy_erg = (h * c / fine_q).to_value(u.erg)
+        fine_integrand = (fine_flam * fine_filter * fine_qe * fine_instrument * fine_atmosphere
+                          * area_cm2 * efficiency / fine_energy_erg)
+        cumulative = np.concatenate(([0.0], np.cumsum(
+            0.5 * (fine_integrand[1:] + fine_integrand[:-1]) * np.diff(fine))))
+        source_rates_unextracted = ((np.interp(edges_hi, fine, cumulative)
+                                     - np.interp(edges_lo, fine, cumulative))
+                                    * grating_efficiency)
         source_rates = source_rates_unextracted * source_fraction
+
+        # --- Sky ---
         spectral_sky_flam = self.sky_model.get("spectral_sky_f_lambda")
         spectral_sky = self.sky_model.get("spectral_sky_mag_offsets")
-        if spectral_sky_flam is not None:
-            sky_wave, sky_flam_values = as_angstrom_curve(spectral_sky_flam, "spectral sky F_lambda")
-            sky_flam = (np.interp(wave.to_value(u.AA), sky_wave.to_value(u.AA), sky_flam_values,
-                                  left=sky_flam_values[0], right=sky_flam_values[-1])
-                        * (u.erg / (u.s * u.cm**2 * u.AA)) * sky_area)
-        elif spectral_sky is None:
-            # Compatibility fallback for a manually specified broad-band sky.
-            sky_mag_at_wave = np.full(wave.size, sky_mag)
-            sky_flam = magnitude_f_lambda(wave, sky_zero_point_jy) * 10.0**(-0.4 * sky_mag_at_wave) * sky_area
+
+        def sky_flam_arcsec2(wavelengths_aa):
+            """Sky surface brightness F_lambda per arcsec^2 [erg/s/cm^2/A/arcsec^2]."""
+            grid = np.asarray(wavelengths_aa, dtype=float)
+            if spectral_sky_flam is not None:
+                sky_wave, sky_values = as_angstrom_curve(spectral_sky_flam, "spectral sky F_lambda")
+                return np.interp(grid, sky_wave.to_value(u.AA), sky_values,
+                                 left=sky_values[0], right=sky_values[-1])
+            if spectral_sky is None:
+                mags = np.full(grid.size, sky_mag)
+            else:
+                colour_wave, colour_mag = as_angstrom_curve(spectral_sky, "spectral sky colour")
+                mags = sky_mag + np.interp(grid, colour_wave.to_value(u.AA), colour_mag,
+                                           left=colour_mag[0], right=colour_mag[-1])
+            zero = magnitude_f_lambda(grid * u.AA, sky_zero_point_jy).to_value(
+                u.erg / (u.s * u.cm**2 * u.AA))
+            return zero * 10.0 ** (-0.4 * mags)
+
+        sky_observed_at_telescope = bool(self.sky_model.get("sky_at_telescope", False))
+        if mode == "slit":
+            # The slit restricts the sky to slit width x extraction height,
+            # and each resel sees only its own dlam of sky.
+            sky_transmission = np.ones(n) if sky_observed_at_telescope else atmosphere_trans
+            sky_rates = (sky_flam_arcsec2(wave_aa) * sky_area * observing_transmission * qe
+                         * instrument_trans * sky_transmission * area_cm2 * efficiency
+                         / photon_energy_erg * dlam_aa) * grating_efficiency * fill
         else:
-            colour_wave, colour_mag = as_angstrom_curve(spectral_sky, "spectral sky colour")
-            sky_mag_at_wave = sky_mag + np.interp(wave.to_value(u.AA), colour_wave.to_value(u.AA), colour_mag,
-                                                   left=colour_mag[0], right=colour_mag[-1])
-            sky_flam = magnitude_f_lambda(wave, sky_zero_point_jy) * 10.0**(-0.4 * sky_mag_at_wave) * sky_area
-        sky_transmission = np.ones_like(atmosphere_trans) if self.sky_model.get("sky_at_telescope", False) else atmosphere_trans
-        sky_rates = (sky_flam * observing_transmission * qe * instrument_trans * sky_transmission * area * efficiency / photon_energy
-                     * dlam).to_value(1 / u.s) * grating_efficiency * fill
+            # Slitless: dispersing a spatially uniform source leaves the
+            # detector uniformly illuminated, so *every pixel* receives sky
+            # light integrated over the entire grating bandpass — the
+            # classical reason objective-grating spectra are sky-limited.
+            # Booking only dlam of sky per resel (as a slit would allow)
+            # underestimates the background by ~(band width / resel width),
+            # two orders of magnitude in a typical Star Analyser setup.
+            fine_sky_trans = np.ones(fine.size) if sky_observed_at_telescope else fine_atmosphere
+            sky_integrand = (sky_flam_arcsec2(fine) * plate_scale**2 * fine_filter * fine_qe
+                             * fine_instrument * fine_sky_trans * area_cm2 * efficiency
+                             / fine_energy_erg)
+            trapezoid = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+            sky_rate_per_pixel = float(trapezoid(sky_integrand, fine)) * grating_efficiency
+            sky_rates = np.full(n, sky_rate_per_pixel * dispersion_pixels_per_resel
+                                * spatial_pixels * fill)
         source_e_unextracted = source_rates_unextracted * t_exp_s
         source_e = source_rates * t_exp_s
         sky_e = sky_rates * t_exp_s
@@ -292,9 +374,17 @@ class SpectroscopyETC:
         scintillation_var = scintillation_variance_e2(
             source_e, float(self.telescope["diameter_mm"]), airmass, elevation_m, t_exp_s)
         digitization_var = n_pixels * digitization_noise_e(self.detector.gain_e_adu)**2
+        # Sky subtraction from finite sky windows along the slit (or beside
+        # the slitless trace) multiplies every per-pixel background variance
+        # by (1 + n_pix/n_sky) (Merline & Howell 1995); scintillation is a
+        # source-borne term and stays outside the factor.
+        subtraction_factor = background_noise_factor(
+            n_pixels, self.sky_model.get("sky_annulus_pixels", 0.0))
         snrs = source_e / np.sqrt(np.maximum(
-            source_e + sky_e + dark_e + n_pixels * self.detector.read_noise_e**2
-            + scintillation_var + digitization_var + extra_bg_e, 1e-300))
+            source_e + subtraction_factor * (sky_e + dark_e
+                                             + n_pixels * self.detector.read_noise_e**2
+                                             + digitization_var + extra_bg_e)
+            + scintillation_var, 1e-300))
         # Cayrel (1988) equivalent-width uncertainty: sigma(EW) =
         # 1.5 sqrt(FWHM dx) / (S/N per pixel), with the resolution element as
         # the line FWHM and dx the dispersion-pixel width.  Reported in mA.
@@ -333,7 +423,24 @@ class SpectroscopyETC:
         result.attrs["sky_mag_arcsec2"] = float(sky_mag)
         result.attrs["scintillation_noise_e_median"] = float(np.median(np.sqrt(scintillation_var)))
         result.attrs["digitization_noise_e"] = float(np.sqrt(digitization_var))
+        result.attrs["sky_subtraction_factor"] = float(subtraction_factor)
+        result.attrs["radial_velocity_kms"] = float(radial_velocity_kms)
+        result.attrs["ebv"] = float(ebv)
+        result.attrs["telluric_bands_included"] = bool(
+            self.atmosphere.get("include_telluric_bands", False))
+        if resolution_R_geometry is not None:
+            result.attrs["resolution_R_geometry"] = resolution_R_geometry
+            result.attrs["resolution_clamped"] = bool(
+                np.isclose(float(resolution_R), resolution_R_geometry))
+        if mode == "slit" and seeing < 0.7 * float(slit_width_arcsec):
+            # The star underfills the slit: the delivered resolution is set
+            # by the seeing image, i.e. finer than the slit-limited R — the
+            # reported R is then conservative.
+            result.attrs["resolution_note"] = (
+                "seeing underfills the slit; delivered resolution is "
+                "seeing-limited (finer than the slit-limited R used here)")
         if mode == "slitless":
             result.attrs["dispersion_aa_pix"] = float(dispersion)
             result.attrs["grating_efficiency"] = grating_efficiency
+            result.attrs["sky_rate_per_pixel_e_s"] = float(sky_rate_per_pixel)
         return result

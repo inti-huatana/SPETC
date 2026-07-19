@@ -401,6 +401,38 @@ def test_calspec_display_name_cleaning():
     assert _clean_display_name("random_name") == "random_name"
 
 
+def test_horizon_profile_math_and_csv_roundtrip():
+    """Pure horizon math (no network): refraction floor, curvature drop, a
+    northern wall peaking at azimuth 0, and the CSV round-trip."""
+    import horizon_profile as hp
+    # Flat terrain at the observer's height: refraction minus the small
+    # curvature drop (0.0045 deg at 1 km).
+    assert np.isclose(hp.apparent_elevation_angle(0.0, 1000.0), hp.HORIZON_REFRACTION_DEG,
+                      atol=0.01)
+    # Earth curvature hides a distant equal-height point below the refraction floor.
+    assert hp.apparent_elevation_angle(0.0, 50_000.0) < hp.HORIZON_REFRACTION_DEG - 0.1
+    # Synthetic grid: flat plain with a 300 m ridge 2 km to the north.
+    axis = np.linspace(-5000.0, 5000.0, 201)
+    east, north = np.meshgrid(axis, axis)
+    elevation = np.where((north > 1800.0) & (north < 2200.0), 300.0, 0.0)
+    grid = hp.LocalGrid(elevation, axis, axis, 0.0)
+    azimuths, horizon = hp.compute_horizon_profile(grid, n_azimuths=72)
+    assert int(azimuths[int(np.argmax(horizon))]) in (0, 355)
+    # The peak must lie between the angles subtended by the ridge's far and
+    # near edges (grid interpolation smooths the wall).
+    near = np.degrees(np.arctan2(300.0, 1800.0)) + hp.HORIZON_REFRACTION_DEG
+    far = np.degrees(np.arctan2(300.0, 2200.0)) + hp.HORIZON_REFRACTION_DEG
+    assert far - 0.1 < horizon.max() < near + 0.1, horizon.max()
+    assert horizon[len(horizon) // 2] < 1.0  # south: flat
+    with tempfile.TemporaryDirectory() as directory:
+        path = hp.save_horizon_csv(Path(directory) / "h.csv", azimuths, horizon,
+                                   45.0, 11.0, 5.0, 0.0)
+        azimuths2, horizon2, metadata = hp.load_horizon_csv(path)
+        assert np.allclose(azimuths2, azimuths, atol=0.05)
+        assert np.allclose(horizon2, horizon, atol=1e-3)
+        assert metadata["radius_km"] == 5.0 and metadata["latitude_deg"] == 45.0
+
+
 def test_filter_profile_builder_matches_svo_scale():
     """Synthetic Vega zero point of the shipped Bessell.V profile must land
     within ~1% of the SVO-declared value."""
@@ -423,6 +455,7 @@ if __name__ == "__main__":
     test_sigma_ew_column_present_and_scales_inversely_with_snr()
     test_target_snr_solver_includes_scintillation()
     test_fits_spectrum_loader_calspec_convention()
+    test_horizon_profile_math_and_csv_roundtrip()
     test_osc_channel_scales_rates_and_pixels_not_peak()
     test_calspec_display_name_cleaning()
     test_filter_profile_builder_matches_svo_scale()

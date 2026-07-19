@@ -220,6 +220,23 @@ class ETCGUI(tk.Tk):
         self._entry(f, 3, "Elevation (m):", self.elev_var)
         ttk.Button(f, text="Save current site…", command=self._save_current_site).grid(row=4, column=0, columnspan=2, sticky="ew", pady=(4, 1))
         ttk.Button(f, text="Import site file…", command=self._import_site_file).grid(row=5, column=0, columnspan=2, sticky="ew", pady=1)
+        self.horizon_radius_var = self._var("horizon_radius", "10")
+        self.horizon_unit_var = self._var("horizon_radius_unit", "km")
+        ttk.Label(f, text="Horizon radius (1-100 km):").grid(row=6, column=0, sticky="w")
+        horizon_row = ttk.Frame(f); horizon_row.grid(row=6, column=1, sticky="ew")
+        horizon_row.columnconfigure(0, weight=1)
+        ttk.Entry(horizon_row, textvariable=self.horizon_radius_var, width=7).grid(row=0, column=0, sticky="ew")
+        ttk.Combobox(horizon_row, textvariable=self.horizon_unit_var, state="readonly", width=6,
+                     values=("km", "miles")).grid(row=0, column=1, padx=(3, 0))
+        self.horizon_generate_button = ttk.Button(f, text="Generate horizon profile (DEM)…",
+                                                  command=self._generate_horizon)
+        self.horizon_generate_button.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(3, 1))
+        ttk.Button(f, text="Display horizon", command=self._display_horizon).grid(
+            row=8, column=0, columnspan=2, sticky="ew", pady=1)
+        self.horizon_status_var = tk.StringVar(
+            value="Horizon from Copernicus GLO-30 (internet needed once; tiles cached). CSV saved automatically.")
+        ttk.Label(f, textvariable=self.horizon_status_var, foreground="gray35", wraplength=320,
+                  justify="left").grid(row=9, column=0, columnspan=2, sticky="w")
 
         f = self._section(holder, "TARGET (ICRS/J2000)")
         self.target_name_var = self._var("target_name", "")
@@ -759,6 +776,85 @@ class ETCGUI(tk.Tk):
                 self.timezone_source_var.set("iana")
                 self._update_timezone_source_state()
             self.sky_var.set(f"{site['sky_ab_mag_arcsec2']:.2f}")
+
+    def _horizon_radius_km(self):
+        value = float(self.horizon_radius_var.get())
+        if self.horizon_unit_var.get() == "miles":
+            value *= 1.609344
+        import horizon_profile
+        if not horizon_profile.MIN_RADIUS_KM <= value <= horizon_profile.MAX_RADIUS_KM:
+            raise ValueError(f"Horizon radius must be 1-100 km "
+                             f"({value:.1f} km requested).")
+        return value
+
+    def _generate_horizon(self):
+        import horizon_profile
+        try:
+            lat, lon = float(self.lat_var.get()), float(self.lon_var.get())
+            radius_km = self._horizon_radius_km()
+        except ValueError as exc:
+            messagebox.showerror("Horizon profile", str(exc)); return
+        self.horizon_generate_button.configure(state="disabled")
+        self.horizon_status_var.set(
+            f"Downloading DEM and computing horizon (r = {radius_km:.1f} km)… "
+            "The window stays responsive; this can take a few minutes on first use.")
+
+        def worker():
+            try:
+                outcome = horizon_profile.generate_horizon(lat, lon, radius_km)
+            except Exception as exc:  # shown to the user, never silent
+                self.after(0, lambda: self._horizon_done(None, str(exc)))
+                return
+            self.after(0, lambda: self._horizon_done(outcome, None))
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _horizon_done(self, outcome, error):
+        self.horizon_generate_button.configure(state="normal")
+        if error:
+            self.horizon_status_var.set(f"Horizon generation failed: {error}")
+            return
+        self.horizon_status_var.set(
+            f"Horizon saved: {outcome['path'].name} (highest obstruction "
+            f"{outcome['max_horizon_deg']:.1f} deg at azimuth {outcome['max_horizon_azimuth_deg']:.0f}).")
+        self._display_horizon()
+
+    def _display_horizon(self):
+        import horizon_profile
+        try:
+            lat, lon = float(self.lat_var.get()), float(self.lon_var.get())
+            radius_km = self._horizon_radius_km()
+        except ValueError as exc:
+            messagebox.showerror("Horizon profile", str(exc)); return
+        path = horizon_profile.horizon_csv_path(lat, lon, radius_km)
+        if not path.is_file():
+            candidates = sorted(horizon_profile.HORIZON_DIR.glob(
+                f"horizon_lat{lat:+.4f}_lon{lon:+.4f}_r*.csv"))
+            if not candidates:
+                messagebox.showinfo("Horizon profile",
+                                    "No saved horizon for these coordinates. Generate one first.")
+                return
+            path = candidates[-1]
+        try:
+            azimuths, horizon, metadata = horizon_profile.load_horizon_csv(path)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Horizon profile", str(exc)); return
+        window = tk.Toplevel(self)
+        window.title(f"Horizon profile - {path.name}")
+        figure = Figure(figsize=(7.4, 3.4), dpi=100)
+        axis = figure.add_subplot(111)
+        axis.fill_between(azimuths, horizon, 0.0, where=horizon > 0, color="#b0c4de", alpha=0.7)
+        axis.plot(azimuths, horizon, color="#1f4f82", linewidth=1.2)
+        axis.set(xlim=(0, 360), xlabel="Azimuth [deg]  (N=0, E=90, S=180, W=270)",
+                 ylabel="Horizon elevation [deg]",
+                 title=f"r = {metadata.get('radius_km', '?')} km, site elevation "
+                       f"{metadata.get('center_elevation_m', float('nan')):.0f} m")
+        axis.set_xticks([0, 45, 90, 135, 180, 225, 270, 315, 360])
+        axis.grid(True, color="#dddddd")
+        canvas = FigureCanvasTkAgg(figure, master=window)
+        canvas.get_tk_widget().pack(fill="both", expand=True, padx=6, pady=6)
+        canvas.draw_idle()
 
     def _save_current_site(self):
         name = simpledialog.askstring("Save current site", "Site name:", initialvalue=self.obs_var.get())

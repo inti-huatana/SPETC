@@ -1,12 +1,18 @@
-# SPETC v10.0
+# SPETC v10.1
 
 Spectro-Photometry Exposure Time Calculator.
 
-Version 10.0
+Version 10.1
 
 2007-2026
 
 Mauro Barbieri (`mauro.barbieri@pm.me`)
+
+Full documentation (compiled PDFs and LaTeX sources) is in `docs/`:
+`SPETC_physics.pdf` (the models and formulae), `SPETC_user_guide.pdf`
+(operation, every input file format specified in full) and
+`SPETC_maintainer_guide.pdf` (architecture, modification recipes, Git
+workflow, packaging).
 
 ## Run
 
@@ -160,6 +166,25 @@ automatically restored with that profile.
   variance** in closed form (it is linear in time, so it enters as an
   extra Poisson-like rate): solved exposures reproduce the requested S/N
   even for bright, scintillation-limited stars.
+
+## Local horizon profile from the Copernicus DEM
+
+The OBSERVATORY panel can compute the real terrain horizon of your site.
+Enter a search radius (default 10, range 1–100 km; a `miles` unit selector
+converts for you) and press **Generate horizon profile**: the program
+downloads the Copernicus GLO-30 digital elevation model tiles around your
+coordinates (public AWS bucket, no credentials; the tiles are cached in
+`dem_cache/` so later runs are offline), resamples them onto a local
+metric grid, and traces the apparent horizon elevation in 360 azimuth
+steps, including the Earth-curvature drop and the standard 34′ horizontal
+refraction. The result is saved automatically as CSV in `data/horizons/`
+(`horizon_lat…_lon…_r…km.csv`: a commented header with the site metadata,
+then `azimuth_deg,horizon_elevation_deg` rows; azimuth N=0/E=90). The
+computation runs in the background — the window stays responsive — and
+**Display horizon** plots the saved profile for the current coordinates.
+This feature needs two extra libraries, installed on demand:
+`pip install rasterio pyproj` (everything else in SPETC works without
+them).
 
 ## Adding template spectra: CALSPEC FITS and STScI atlases
 

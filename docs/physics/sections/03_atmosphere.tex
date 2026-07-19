@@ -87,6 +87,29 @@ loss.
   \label{fig:dispersion}
 \end{figure}
 
+\subsection{The local terrain horizon}
+\label{sec:horizon}
+
+The astronomical horizon of a real site is set by terrain, not by
+altitude zero. \spetc{} computes the apparent horizon profile
+$\theta_h(A)$ from the Copernicus GLO-30 global digital surface model
+(30-m resolution): the elevation field within a user-chosen radius
+$r$ (1--100 km) is resampled onto a local East/North metric grid, and
+along each of 360 azimuth rays the maximum apparent elevation angle is
+taken, where the apparent angle of a terrain point at distance $d$ and
+height difference $\Delta h$ is
+\begin{equation}
+  \theta \;=\; \arctan\!\frac{\Delta h - d^2/2R_\oplus}{d} \;+\; 34',
+\end{equation}
+combining the Earth-curvature drop $d^2/2R_\oplus$ with the standard
+$34'$ horizontal refraction (the same convention used for rise/set
+phenomena). The choice of $r$ is a statement about what can block the
+site: 10~km captures the surrounding hills of a typical site; a plain
+below a mountain chain may need 50--100~km before the profile
+converges. The profile is stored as a per-degree CSV; a natural future
+use is masking the visibility track and the S/N time series where the
+target sits below the \emph{local} rather than the geometric horizon.
+
 \subsection{Scintillation}
 \label{sec:scintillation}
 

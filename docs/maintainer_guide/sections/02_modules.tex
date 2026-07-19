@@ -79,6 +79,21 @@ non-Poisson terms (scintillation); \code{solvers.plan\_stack} produces the
 sub-exposure/frame-count plan with the read-noise penalty and the
 sky-limited frame length, on the same closed form.
 
+\subsection{\code{horizon\_profile.py}}
+Terrain-horizon computation from the Copernicus GLO-30 DEM. Layered so
+that the heavy geospatial stack (rasterio, pyproj --- the project's only
+\emph{optional} dependencies, imported lazily with an instructive error)
+is confined to the tile-download/reprojection half
+(\code{fetch\_dem\_window}, \code{build\_local\_grid}, AWS bucket with
+local cache in \code{dem\_cache/}), while the horizon mathematics
+(\code{apparent\_elevation\_angle} with curvature + $34'$ refraction,
+\code{compute\_horizon\_profile} ray-marching on a
+\code{RegularGridInterpolator}) and the CSV I/O
+(\code{save\_horizon\_csv}/\code{load\_horizon\_csv},
+\code{data/horizons/}) are pure and tested offline on synthetic grids.
+\code{generate\_horizon} is the full pipeline the GUI calls in a worker
+thread.
+
 \subsection{\code{make\_filter\_profile.py}, \code{spetc\_batch.py}}
 Standalone tools sharing the physics modules. \code{make\_filter\_profile}
 turns a two-column transmission file into a full SVO-format VOTable pair:

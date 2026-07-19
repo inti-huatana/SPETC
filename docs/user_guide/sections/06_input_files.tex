@@ -239,6 +239,32 @@ including the curves; the most recently used profile is reloaded
 automatically at start-up. This is the mechanism to maintain one
 configuration per telescope+camera combination you own.
 
+\subsection{Horizon profile CSV}
+\label{sec:file-horizon}
+
+Written automatically by the horizon generator into
+\code{data/horizons/horizon\_lat<lat>\_lon<lon>\_r<km>km.csv}; readable by
+any plotting tool and by \textsf{Display horizon}. A commented header
+records the site, then one row per azimuth:
+
+\begin{verbatim}
+# SPETC horizon profile
+# latitude_deg: 45.848600
+# longitude_deg: 11.569600
+# radius_km: 10
+# center_elevation_m: 1366.0
+azimuth_deg,horizon_elevation_deg
+0.0,1.234
+1.0,1.198
+\end{verbatim}
+
+Azimuth is degrees from North through East (N=0, E=90 --- the same
+convention as every other azimuth in the program); the horizon elevation
+is the apparent altitude of the terrain in degrees, including the
+Earth-curvature drop and the standard $34'$ horizontal refraction, so a
+target is genuinely visible when its computed altitude exceeds the
+profile value at its azimuth.
+
 \subsection{Batch run descriptions}
 
 The headless mode (Sect.~\ref{sec:tool-batch}) is driven by a JSON file

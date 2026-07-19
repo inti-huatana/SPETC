@@ -51,9 +51,21 @@ its $\beta$; Moffat reproduces the wings of real star images and is
 recommended); an optional \textbf{seeing-scaling} checkbox that makes the
 seeing vary with wavelength and airmass (Kolmogorov turbulence: blue light
 more blurred than red, and worse as the target sets --- with it ticked the
-value you enter is the zenith $V$ seeing); and an optional \textbf{extra
+value you enter is the zenith $V$ seeing); an optional \textbf{extra
 background} in e$^-$/s/pixel, a catch-all for detector glow, stray light or
-ghosting that raises the background noise and the peak-pixel prediction.
+ghosting that raises the background noise and the peak-pixel prediction;
+a \textbf{guiding rms} in arcsec (0 = perfect tracking) that adds
+image-motion blur in quadrature to the seeing --- enter your autoguider's
+rms error, or an estimate of the unguided drift per exposure; a
+\textbf{telluric bands} checkbox that adds the O$_2$/H$_2$O molecular
+absorption bands of the red and near-infrared (the deep A band at
+7605\,\AA{} in particular) on top of the smooth extinction curve; and the
+\textbf{sky annulus pixels} field: the number of pixels you actually use
+to measure the background around the star (0 = assume it perfectly
+known). A finite value adds the classical $(1+n_{\rm pix}/n_{\rm sky})$
+sky-subtraction noise to every background term --- with a small annulus
+this is tens of percent of the background noise, so faint-target
+predictions become noticeably more honest.
 \textsf{Save/Load instrument profile} stores the whole column as a portable
 JSON with its QE and response curves.
 
@@ -77,7 +89,10 @@ and the S/N reference wavelength, the \textbf{slit orientation}
 geometry helper}: enter grating lines/mm and collimator/camera focal
 lengths and press \textsf{Compute R from geometry} — the Littrow grating
 equation fills the R field (which stays editable) and reports whether you
-are slit- or seeing-limited.
+are slit- or seeing-limited. The optional \textbf{clamp} checkbox below
+it goes one step further: with it ticked, the engine itself limits the
+entered R to what the geometry can deliver, so a typo like R $=$ 100\,000
+on a 600 l/mm grating cannot silently inflate every prediction.
 
 \subsection{Filter and template selection}
 
@@ -88,7 +103,15 @@ defaults to \code{BLANK}, the unfiltered response). The panel previews the
 observing transmission curve with its pivot wavelength, width and zero
 point; the template selector searches the catalogue by name and previews
 the selected flux distribution; \textsf{Validate V and B$-$V} checks the
-template's synthetic colours against the catalogue.
+template's synthetic colours against the catalogue. Two optional fields
+transform the template before it is calibrated: the \textbf{radial
+velocity} in km/s (positive receding) shifts all wavelengths by
+$(1+v/c)$ — relevant for high-velocity stars and extragalactic targets
+at low resolution — and \textbf{E(B$-$V)} reddens the template with the
+standard CCM89 interstellar extinction law ($R_V = 3.1$). The magnitude
+you enter always stays the \emph{observed} one; the transforms only
+change the template's colours, exactly as reddening and motion do to a
+real star.
 
 \subsection{Run actions}
 

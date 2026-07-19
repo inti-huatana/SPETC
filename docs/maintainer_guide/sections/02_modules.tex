@@ -19,8 +19,13 @@ as a time-linear rate, $(\dot S C)^2/2$, so closed-form solvers can absorb
 it as an extra Poisson-like term), \code{effective\_seeing\_arcsec} (the
 ETC-42 Kolmogorov seeing scaling $X^{0.6}(\lambda/5000)^{-0.2}$, array-safe
 in wavelength), \code{digitization\_noise\_e} ($g/\sqrt{12}$),
+\code{telluric\_transmission} (parametric O$_2$/H$_2$O band model with
+curve-of-growth airmass scaling, enabled by
+\code{atmosphere["include\_telluric\_bands"]}),
 \code{refractive\_index\_minus\_one} and
-\code{differential\_refraction\_arcsec} (Filippenko 1982). Two optional
+\code{differential\_refraction\_arcsec} (Filippenko 1982).
+\code{atmosphere["guiding\_rms\_arcsec"]} adds image-motion blur in
+quadrature to the seeing in both engines. Two optional
 inputs the engines read from their context dictionaries pair with these:
 \code{atmosphere["seeing\_wavelength\_scaling"]} (bool; turns the seeing
 scaling on, per-wavelength in spectroscopy and at the band pivot in
@@ -38,21 +43,35 @@ engines).
 \code{electron\_rate} (Eq.~4 of the physics document),
 \code{psf\_encircled\_energy} and \code{psf\_slit\_throughput}
 (Gaussian/Moffat; the Moffat slit coupling is the Student-$t$ CDF with
-$\nu = 2\beta-2$), and \code{snr} (CCD equation with an
-\code{extra\_variance\_e2} hook). The Gaussian-only wrappers
+$\nu = 2\beta-2$), \code{snr} (CCD equation with an
+\code{extra\_variance\_e2} hook and the Merline--Howell
+\code{sky\_annulus\_pixels} background-estimation factor, also exposed as
+\code{background\_noise\_factor}), \code{bin\_integrated\_flux} (exact
+per-bin cumulative-trapezoid integrals --- the v10.2 R-invariance
+machinery), \code{ccm89\_a\_lambda\_over\_av} and
+\code{transformed\_template} (radial-velocity shift + CCM89 reddening,
+applied by both engines before calibration). The Gaussian-only wrappers
 \code{gaussian\_encircled\_energy} and \code{slit\_throughput} are kept for
 backward compatibility.
 
 \subsection{\code{sky\_brightness.py} / \code{sky\_background.py}}
 \code{sky\_brightness.py} owns the shared constants (solar minima, $U$--$K$
 tables, lunar factors) and the component physics:
-\code{van\_rhijn\_factor}, \code{zodiacal\_s10}, \code{starlight\_s10},
+\code{van\_rhijn\_factor}, \code{airglow\_extinction\_factor}
+(Kasten--Young slant-path attenuation of the airglow),
+\code{zodiacal\_s10} with \code{zodiacal\_elongation\_factor} (Leinert
+power law towards the Sun), \code{starlight\_s10},
 \code{dark\_sky\_position\_correction\_mag},
 \code{moonlight\_scattering\_function} and the nine-band
-\code{sky\_brightness\_total}. \code{sky\_background.py} supplies the
+\code{sky\_brightness\_total} (now including the
+$(\bar d/d_{\rm moon})^2$ lunar-distance factor).
+\code{sky\_background.py} supplies the
 observed normalization \code{sky\_magnitude\_vega}: dark table +
-position/van-Rhijn correction below $-18^\circ$ Sun altitude, Weaver
-daylight above the horizon, linear flux blend in twilight. The GUI stitches
+position/van-Rhijn correction below $-18^\circ$ \emph{geometric} Sun
+altitude, the re-anchored daylight table above the horizon
+(\code{DAYLIGHT\_ANCHOR\_V\_MAG} = 4.0 mag/arcsec$^2$; the supplied
+values are preserved in \code{DAYLIGHT\_V\_MAG\_SUPPLIED}), linear flux
+blend in twilight. The GUI stitches
 them: the ING normalization sets the level, the Benn--Ellison/K\&S bands set
 the colour and the Moon term.
 
@@ -60,20 +79,32 @@ the colour and the Moon term.
 \code{compute\_target\_track} is the workhorse: refraction-corrected
 \code{AltAz} frames (\code{site\_pressure\_hpa}/\code{site\_temperature\_c}
 ISA at elevation), \code{pickering\_airmass} above the $5^\circ$ cutoff,
-Sun/Moon positions, Moon phase and separation, and
-\code{parallactic\_angle\_deg} per sample. Parsers and converters
+Sun/Moon positions, Moon phase and separation, the geometric
+(unrefracted) Sun altitude for twilight thresholds, the target's solar
+elongation, the topocentric Moon distance, and
+\code{parallactic\_angle\_deg} per sample; the almanac sunrise
+convention is the module constant \code{SUN\_RISE\_SET\_ALTITUDE\_DEG}
+($-50'$). Parsers and converters
 (\code{parse\_ra}, sexagesimal formatters, frame converters) and the
 \code{find\_*} rise/set helpers complete the module.
 
 \subsection{\code{photometry.py} / \code{spectroscopy.py}}
 Each exposes one class with one compute method taking the four-dictionary
 context plus per-call arguments. \code{PhotometryETC.compute\_photometry\_single}
-handles point and extended geometry, the full noise budget and saturation;
+handles point and extended geometry, the full noise budget and saturation
+(band integrals on the union of filter, template and dense grids);
 \code{SpectroscopyETC.compute\_spectroscopy} handles slit (PSF +
-dispersion-offset losses) and slitless (grating physics via module function
-\code{grating\_dispersion\_aa\_per\_pixel}) modes and returns a DataFrame
-whose \code{attrs} carry per-run metadata (mode, $R$, sky brightness, noise
-terms, dispersion).
+dispersion-offset losses; optional \code{slit\_geometry} clamp of $R$)
+and slitless (grating physics via module function
+\code{grating\_dispersion\_aa\_per\_pixel}; sky booked as the
+\emph{full-bandpass} per-pixel integral, attrs
+\code{sky\_rate\_per\_pixel\_e\_s}) modes. Source counts per resel are
+exact bin integrals (cumulative trapezoid on a union grid), so line
+fluxes are $R$-invariant. Both engines accept
+\code{radial\_velocity\_kms}/\code{ebv} and apply the sky-subtraction
+noise factor; the DataFrame \code{attrs} carry per-run metadata (mode,
+$R$, sky brightness, noise terms, dispersion, subtraction factor,
+clamp/seeing-limited notes).
 
 \subsection{\code{detector.py}, \code{solvers.py}}
 \code{Detector} stores pixel size, gain, full well, bit depth, read noise,

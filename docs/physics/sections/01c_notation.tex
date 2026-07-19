@@ -1,0 +1,220 @@
+\section{Notation: every symbol, defined once}
+\label{sec:notation}
+
+Every quantity used in this document is defined here, grouped by theme,
+with its units and the section where it first does physical work.  Two
+deliberate collisions of astronomical convention are flagged explicitly:
+$\beta$ denotes both the ecliptic latitude (sky model,
+Sect.~\ref{sec:sky}) and the Moffat wing index (PSF, Sect.~\ref{sec:psf});
+$\alpha$ denotes both the lunar phase angle (Sect.~\ref{sec:sky}) and the
+Moffat core radius (Sect.~\ref{sec:psf}).  The context — sky or PSF —
+always disambiguates them, and no equation mixes the two meanings.
+
+\subsection*{Radiometry and magnitudes (Sect.~\ref{sec:radiometry})}
+
+\begin{tabular}{llp{8.6cm}}
+\toprule
+Symbol & Units & Definition \\
+\midrule
+$\lambda$ & \si{\angstrom} & Wavelength; all internal grids are in \si{\angstrom}. \\
+$\flam(\lambda)$ & \si{erg.s^{-1}.cm^{-2}.\angstrom^{-1}} & Spectral flux
+  density per unit wavelength (``F-lambda''), the quantity all templates
+  are converted to. \\
+$F_\nu$ & Jy & Spectral flux density per unit frequency;
+  $1\,\mathrm{Jy} = 10^{-23}\,\si{erg.s^{-1}.cm^{-2}.Hz^{-1}}$. \\
+$Z_\nu$ & Jy & The $F_\nu$ zero point of a magnitude system: the flux
+  density of a zero-magnitude source (AB: 3631 Jy at every wavelength;
+  Vega: per-filter values from the SVO profile). \\
+$m$ & mag & Magnitude: $m = -2.5\log_{10}(F/F_{\rm zero})$ in the stated
+  system and band. \\
+$m_{v0}$ & mag & Catalogue field: the visual magnitude represented by a
+  stored template file as shipped (0 for BPGS spectra). \\
+$T_\lambda$ & — & Filter (passband) transmission, $0 \le T_\lambda \le 1$. \\
+$W_\lambda$ & — & Synthetic-photometry weighting: $\lambda$ for a
+  photon-counting detector, 1 for an energy integrator (SVO
+  \code{DetectorType}). \\
+$Q_\lambda$ & — & Detector quantum efficiency: detected electrons per
+  incident photon at $\lambda$. \\
+$O_\lambda$ & — & Optics/instrument throughput curve (everything between
+  aperture and detector except the filter and QE). \\
+$\eta$ & — & Scalar (grey) efficiency factor for losses with no stated
+  wavelength dependence. \\
+$A$ & \si{cm^2} & Unobstructed collecting area,
+  $A = \tfrac{\pi}{4}(D^2 - d_{\rm obs}^2)$, with $D$ the aperture and
+  $d_{\rm obs}$ the central-obstruction diameter. \\
+$h,\,c$ & cgs & Planck constant and speed of light; $hc/\lambda$ is the
+  photon energy. \\
+$\dot S,\ \dot B,\ \dot d$ & \si{e^-/s} & Detected electron rates: source
+  (aperture- or element-integrated), sky, and dark current per pixel. \\
+$v$ & km/s & Radial velocity of the target; positive = receding. \\
+$E(B\!-\!V)$ & mag & Interstellar reddening (colour excess); $R_V =
+  A(V)/E(B\!-\!V) = 3.1$ assumed; $A(\lambda)$ = extinction in
+  magnitudes at $\lambda$ (CCM89 law). \\
+\bottomrule
+\end{tabular}
+
+\subsection*{Geometry, time and the atmosphere
+(Sects.~\ref{sec:atmosphere}, \ref{sec:sky})}
+
+\begin{tabular}{llp{8.6cm}}
+\toprule
+Symbol & Units & Definition \\
+\midrule
+$h$ (altitude) & deg & Apparent altitude above the horizon (includes
+  refraction unless stated ``geometric''). \\
+$z$ & deg & Zenith distance, $z = 90^\circ - h$. \\
+$X$ & — & Airmass: the optical path through the atmosphere relative to the
+  zenith path; computed from the apparent altitude with
+  Eq.~(\ref{eq:pickering}). \\
+$T_{\rm atm}(\lambda)$ & — & Zenith atmospheric transmission; the
+  transmission at airmass $X$ is $T_{\rm atm}^{\,X}$ (Bouguer law). \\
+$k_\lambda$ & mag/airmass & Extinction coefficient;
+  $T_{\rm atm} = 10^{-0.4 k_\lambda}$. \\
+$n(\lambda)$ & — & Refractive index of air at the site conditions. \\
+$\Delta R(\lambda)$ & arcsec & Differential atmospheric refraction
+  (atmospheric dispersion) relative to a reference wavelength,
+  Eq.~(\ref{eq:dr}). \\
+$H,\ \varphi,\ \delta$ & deg & Hour angle of the target, geographic
+  latitude of the site, declination of the target. \\
+$q$ & deg & Parallactic angle: the position angle of the local vertical at
+  the target, measured from North through East, Eq.~(\ref{eq:parallactic}). \\
+$P,\ T_{\rm site},\ E$ & hPa, \si{\celsius}, m & Site pressure,
+  temperature (ISA defaults from the elevation) and elevation. \\
+$t_{\rm exp}$ & s & Exposure time of a single frame. \\
+$d_{\rm cm}$ & cm & Telescope aperture diameter (in the scintillation
+  law). \\
+$\sigma_{\rm scint}/I$ & — & Fractional rms intensity modulation by
+  scintillation, Eq.~(\ref{eq:scint}). \\
+$s$, FWHM & arcsec & Seeing: the full width at half maximum of the
+  seeing-limited stellar profile. \\
+$\sigma_g$ & arcsec & Guiding (tracking) error, rms per axis; adds a blur
+  of FWHM $2.355\,\sigma_g$ in quadrature to the seeing. \\
+$r_0$ & m & Fried parameter of Kolmogorov turbulence;
+  seeing $\propto \lambda/r_0$. \\
+\bottomrule
+\end{tabular}
+
+\subsection*{Sky brightness (Sect.~\ref{sec:sky})}
+
+\begin{tabular}{llp{8.6cm}}
+\toprule
+Symbol & Units & Definition \\
+\midrule
+$\mu$ & mag/arcsec$^2$ & Surface brightness: the magnitude of the flux
+  received from one square arcsecond of sky. \\
+S10 & — & Surface-brightness unit: the equivalent of one star of
+  $m_V = 10$ per square degree;
+  $\mu = 27.78 - 2.5\log_{10} q$ mag/arcsec$^2$ for a brightness of $q$
+  S10 units. \\
+nL & — & nanoLambert, the luminance unit of the Krisciunas--Schaefer
+  moonlight model; converted to S10 by the factor 3.8. \\
+$q_{\rm air},\,q_{\rm zod},\,q_\ast$ & S10 & Airglow, zodiacal-light and
+  integrated-starlight brightness components. \\
+$a$ & — & Solar-cycle activity, interpolated between tabulated solar
+  minima: 0.8 at minimum, 2.0 at maximum. \\
+$V(z)$ & — & van Rhijn airglow path-length factor,
+  Eq.~(\ref{eq:vanrhijn}). \\
+$\hat h$ & km & Height of the airglow emitting layer (90 km). \\
+$R_\oplus$ & m & Mean Earth radius, $6.371\times10^6$ m. \\
+$\beta$ (sky) & deg & Ecliptic latitude of the field. \\
+$b$ & deg & Galactic latitude of the field. \\
+$\epsilon$ & deg & Solar elongation of the field: its angular distance
+  from the Sun. \\
+$\alpha$ (Moon) & deg & Lunar phase angle: $0^\circ$ = full Moon,
+  $90^\circ$ = quarter; computed as $180^\circ$ minus the Sun--Moon
+  elongation. \\
+$\rho$ & deg & Angular separation between the Moon and the target. \\
+$I^\ast$ & — & Lunar illuminance factor of the K\&S model. \\
+$f(\rho)$ & — & K\&S scattering function (Rayleigh + aureole),
+  Eq.~(\ref{eq:ks}). \\
+$X_{\rm m}$ & — & Airmass of the Moon. \\
+$d_{\rm moon}$ & km & Topocentric distance of the Moon; the illuminance
+  scales as $(\bar d/d_{\rm moon})^2$ with $\bar d = 384\,400$ km. \\
+$\mu_{\rm SQM}$ & mag/arcsec$^2$ & Zenith $V$ sky brightness measured by
+  a Sky Quality Meter. \\
+\bottomrule
+\end{tabular}
+
+\subsection*{PSF and coupling (Sect.~\ref{sec:psf})}
+
+\begin{tabular}{llp{8.6cm}}
+\toprule
+Symbol & Units & Definition \\
+\midrule
+$\sigma$ & arcsec & Gaussian width, $\sigma = \mathrm{FWHM}/2.355$. \\
+$\alpha$ (Moffat) & arcsec & Moffat core radius,
+  $\alpha = \mathrm{FWHM}/(2\sqrt{2^{1/\beta}-1})$. \\
+$\beta$ (Moffat) & — & Moffat wing index; small $\beta$ = strong wings;
+  Gaussian is the $\beta \to \infty$ limit. \\
+$\mathrm{EE}(r)$ & — & Encircled energy: fraction of the total PSF flux
+  inside a circular aperture of radius $r$. \\
+$T(w,\delta)$ & — & Slit coupling: fraction of the PSF flux through an
+  infinite slit of width $w$ decentred by $\delta$,
+  Eq.~(\ref{eq:slit}). \\
+$F_\nu$ (CDF) & — & Student-$t$ cumulative distribution with $\nu$
+  degrees of freedom (only inside Eq.~\ref{eq:slit}; not a flux). \\
+$p$ & arcsec/pixel & Plate scale: $p = 206265\, s_{\rm pix}/f_{\rm tel}$
+  with $s_{\rm pix}$ the pixel size and $f_{\rm tel}$ the telescope focal
+  length in the same length units. \\
+\bottomrule
+\end{tabular}
+
+\subsection*{Noise budget and solvers (Sect.~\ref{sec:photometry})}
+
+\begin{tabular}{llp{8.6cm}}
+\toprule
+Symbol & Units & Definition \\
+\midrule
+$S,\ B,\ D$ & e$^-$ & Accumulated source, sky and dark charge in the
+  aperture over $t_{\rm exp}$. \\
+$N_{\rm pix}$ & — & Number of detector pixels summed in the aperture or
+  extraction window. \\
+$\sigma_R$ & e$^-$ & Read noise per pixel per frame, rms. \\
+$g$ & e$^-$/ADU & Conversion gain; the ADC quantization noise is
+  $g/\sqrt{12}$ per pixel. \\
+$N_{\rm bit}$ & — & ADC bit depth; digital saturation at
+  $g\,(2^{N_{\rm bit}}-1)$ electrons. \\
+$n_{\rm sky}$ & — & Number of pixels used to \emph{measure} the
+  background (sky annulus or slit sky windows); finite $n_{\rm sky}$
+  multiplies background variances by $(1 + N_{\rm pix}/n_{\rm sky})$. \\
+$\dot b$ & \si{e^-/s}/pixel & Optional extra background rate (detector
+  glow, stray light). \\
+$C$ & s$^{1/2}$ & Scintillation constant of a configuration:
+  $\sigma_{\rm scint}/I = C\,(2 t_{\rm exp})^{-1/2}$. \\
+$Q$ & \si{e^-/s} & Total Poisson-like rate in the solver,
+  $Q = \dot S + \dot B + \dot D$ (plus the scintillation rate). \\
+$\Omega$ & arcsec$^2$ & Angular area of an extended source. \\
+$N,\ T$ & —, s & Number of stacked frames and total integration time
+  $T = N\,t_{\rm sub}$. \\
+\bottomrule
+\end{tabular}
+
+\subsection*{Spectroscopy (Sect.~\ref{sec:spectroscopy})}
+
+\begin{tabular}{llp{8.6cm}}
+\toprule
+Symbol & Units & Definition \\
+\midrule
+$R$ & — & Resolving power, $R = \lambda/\Delta\lambda$. \\
+$\Delta\lambda$ & \si{\angstrom} & Resolution element: the wavelength
+  width the instrument cannot subdivide; one output row of the ETC. \\
+$\mathcal{D}$ & \si{\angstrom}/pixel & Linear dispersion at the
+  detector. \\
+$\ell$ & pixel & Line-spread-function FWHM in dispersion-direction
+  pixels (slitless: seeing $\oplus$ intrinsic $\oplus$ dispersion
+  smear). \\
+$n_{\rm mm}$ & mm$^{-1}$ & Grating groove density. \\
+$m$ (grating) & — & Diffraction order (1 for the Star Analyser). \\
+$L$ & mm & Grating-to-sensor distance of a converging-beam grating. \\
+$f_{\rm coll},\ f_{\rm cam}$ & mm & Collimator and camera focal lengths
+  of a slit spectrograph. \\
+$w_{\rm slit}$ & arcsec & Slit width on the sky. \\
+$\delta x$ & \si{\angstrom} & Width of one dispersion pixel,
+  $\delta x = \Delta\lambda/(\text{pixels per element})$. \\
+$W$ & \si{\angstrom} & FWHM of a spectral line in the Cayrel relation,
+  Eq.~(\ref{eq:cayrel}). \\
+EW & \si{\angstrom} & Equivalent width: the width of a rectangle of
+  continuum height with the same integrated absorption/emission as the
+  line. \\
+\bottomrule
+\end{tabular}

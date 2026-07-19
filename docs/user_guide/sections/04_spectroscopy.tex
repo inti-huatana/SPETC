@@ -84,10 +84,22 @@ grating blur and the atmospheric-dispersion smear combined; with
 $2$--$3''$ seeing expect $R \sim 100$--200, and note that longer
 exposures do \emph{not} sharpen it --- only better seeing or a longer
 grating distance do. The cross-dispersion extraction height plays the
-role the extraction height plays in slit mode. Slitless results are
-flagged \emph{experimental} until validated against a calibrated
-instrument; treat absolute count levels with one raised eyebrow and
-relative comparisons with confidence.
+role the extraction height plays in slit mode.
+
+One consequence of having no slit deserves emphasis, because it changes
+the numbers a lot: \textbf{every pixel of a slitless spectrum receives
+sky light from the entire bandpass}, not just from the small wavelength
+interval mapped to it (the dispersed image of a uniform sky is still
+uniform). The ETC accounts for this in full since v10.2 --- for a
+typical Star Analyser configuration the background is about a hundred
+times larger than a slit-style calculation would suggest. In practice:
+under a dark sky short exposures on bright targets work exactly as Star
+Analyser users know they do, but under a bright (moonlit or urban) sky
+the mode degrades much faster than a slit spectrograph, and the ETC now
+shows that honestly. Slitless results remain flagged
+\emph{experimental} until validated against a calibrated instrument;
+treat absolute count levels with one raised eyebrow and relative
+comparisons with confidence.
 
 \subsection{Getting a science answer: S/N, $\sigma$(EW) and the stack plan}
 

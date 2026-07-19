@@ -82,3 +82,22 @@ time sample, the whole-night time series then correctly shows the seeing ---
 and the losses that follow from it --- degrading as the target sets. The
 mode is off by default, leaving the seeing flat; when it is on, the entered
 value is by definition the zenith $V$ seeing.
+
+\subsection{Guiding blur}
+\label{sec:guiding}
+
+Over a long exposure the star also moves: periodic error, polar-alignment
+drift and guiding corrections smear the image. If the tracking error is
+approximately Gaussian with rms $\sigma_g$ per axis, the time-averaged
+image is the seeing profile convolved with a Gaussian of FWHM
+$2.355\,\sigma_g$, and the effective image width entering every coupling
+of this section is
+\begin{equation}
+  \mathrm{FWHM}_{\rm eff} \;=\;
+  \sqrt{\mathrm{FWHM}_{\rm seeing}^2 + (2.355\,\sigma_g)^2}.
+\end{equation}
+An entered guiding rms of 0 (the default) reproduces the pure-seeing
+case; a typical unguided minute on a mid-range mount
+($\sigma_g \sim 1''$) visibly lowers aperture and slit couplings, which
+is exactly the effect amateurs observe between guided and unguided
+frames (v10.2).

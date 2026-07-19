@@ -24,6 +24,44 @@ $T=10^{-0.4k_\lambda}$) or from the built-in broad-band $U$--$K$ table
 to the source; observed sky brightnesses are never extinguished a second
 time.
 
+\subsection{Telluric molecular bands}
+\label{sec:telluric}
+
+A smooth extinction curve describes Rayleigh scattering, aerosols and
+ozone, but not the discrete molecular absorption \emph{bands} of O$_2$ and
+H$_2$O that structure the red and near-infrared: the O$_2$ B and A bands
+at 6870 and \SI{7605}{\angstrom} (the A band removes up to
+$\sim$75\% of the light at its core), and the water bands near 7200,
+8200, 8900 and \SI{9400}{\angstrom}. As an option, \spetc{} multiplies the
+smooth transmission by a parametric band model: each band is a Gaussian
+absorption profile of tabulated centre $\lambda_0$, width $\sigma_b$ and
+zenith depth $d_0$, with the depth growing with airmass as
+$d(X) = d_0\,X^{p}$. The exponent $p$ encodes the curve of growth — the
+regime describing how absorption grows with absorber amount: $p = 1$ for
+the optically thin water lines (absorption $\propto$ absorbers) and
+$p \simeq 0.55$ for the saturated O$_2$ bands, whose cores are already
+black so only the band \emph{wings} deepen ($\propto \sqrt{X}$). This is
+a band-averaged model adequate for S/N budgeting at the ETC's resolution;
+it is not a line-by-line radiative transfer, and it deliberately omits
+the strong variability of the water columns, which only a contemporaneous
+measured spectrum can capture.
+
+\subsection{Rise, set and twilight conventions}
+\label{sec:conventions}
+
+Positions in the planning track are \emph{apparent}: they include
+atmospheric refraction (evaluated with ERFA at the site conditions), which
+lifts objects near the horizon by up to $\sim34'$. Two published
+conventions are nevertheless defined on different quantities, and
+\spetc{} follows both correctly (v10.2). Twilight boundaries — civil
+($-6^\circ$), nautical ($-12^\circ$) and astronomical ($-18^\circ$) — are
+defined on the \emph{geometric} (unrefracted) altitude of the Sun's
+centre, so the sky model receives the geometric solar altitude, computed
+in a refraction-free frame. Sunrise and sunset are the almanac
+convention: the Sun's \emph{upper limb} touching the geometric horizon
+under standard refraction, i.e.\ the centre at geometric altitude
+$-50' = -(34' + 16')$, refraction plus solar semidiameter.
+
 \subsection{Refraction and airmass}
 \label{sec:airmass}
 

@@ -1,8 +1,8 @@
-# SPETC v10.1
+# SPETC v10.2
 
 Spectro-Photometry Exposure Time Calculator.
 
-Version 10.1
+Version 10.2
 
 2007-2026
 
@@ -177,6 +177,57 @@ automatically restored with that profile.
   variance** in closed form (it is linear in time, so it enters as an
   extra Poisson-like rate): solved exposures reproduce the requested S/N
   even for bright, scintillation-limited stars.
+
+## Physics-audit fixes and additions (v10.2)
+
+A full physics audit of v10.1 (`PHYSICS_AUDIT_v10.1.md`) found two
+demonstrable errors, one suspect dataset and a list of missing standard
+terms. All of them are implemented and regression-tested in v10.2:
+
+* **Slitless sky (severe fix)**: dispersing a uniform source leaves the
+  detector uniformly illuminated, so every slitless pixel receives sky from
+  the **entire grating bandpass**. The sky is now the full-band per-pixel
+  integral (~118× larger than the old per-resel booking for a typical Star
+  Analyser setup); slitless S/N under bright sky is accordingly — and
+  correctly — much lower.
+* **R-invariant line fluxes (severe fix)**: per-resel source counts are now
+  exact **bin integrals** of the calibrated template (cumulative trapezoid
+  on a union grid) instead of centre-point samples; total counts of a
+  narrow emission line no longer depend on the chosen R (previously up to
+  8× spread). σ(EW) inherits the fix.
+* **Daylight sky re-anchored**: the supplied daylight table read as
+  mag/arcsec² was ~4.5 mag too faint; its shape is kept and its brightest
+  entry re-anchored to the physical V = 4.0 mag/arcsec². Twilight blending
+  inherits the correction and now runs on the **geometric** Sun altitude
+  (the standard convention); sunrise/set use the −50′ upper-limb rule.
+* **Sky-subtraction noise**: a new *sky annulus pixels* field adds the
+  Merline & Howell `(1 + n_pix/n_sky)` factor to every background variance
+  term in both engines and in the exposure solver.
+* **Moonlight distance**: the Krisciunas & Schaefer illuminance is scaled
+  by `(384400/d_moon)²` from the topocentric track distance (±15% over the
+  month).
+* **Zodiacal elongation**: the zodiacal component now brightens toward the
+  Sun (Leinert-style power law, ~4× at 60° elongation).
+* **Airglow slant extinction**: the van Rhijn enhancement is attenuated by
+  Kasten–Young slant-path tropospheric extinction, matching the observed
+  horizon behaviour.
+* **Telluric bands** (opt-in checkbox): parametric O₂/H₂O absorption bands
+  (B and A bands, water bands to 9400 Å) with curve-of-growth airmass
+  scaling on top of the smooth extinction curve.
+* **Guiding blur**: an entered guiding rms adds image-motion blur in
+  quadrature to the seeing in every PSF coupling.
+* **Template transforms**: optional radial velocity (λ(1+v/c)) and
+  interstellar reddening E(B−V) (CCM89, R_V = 3.1) applied to the template
+  before calibration — the entered magnitude stays the observed one.
+* **Consistent QE policy**: spectroscopy now zero-fills QE and observing
+  filter outside their coverage exactly like photometry (no more crashes on
+  red-end ranges photometry accepts).
+* **Alias-free band integrals**: photometric integration runs on the union
+  of the filter grid, the template grid and a dense baseline, so coarse
+  filter tables no longer skip narrow template lines.
+* **R sanity**: an optional clamp limits the entered slit R to what the
+  entered spectrograph geometry can deliver; an underfilled slit
+  (seeing ≪ slit) is flagged as seeing-limited (entered R conservative).
 
 ## Local horizon profile from the Copernicus DEM
 

@@ -19,21 +19,34 @@ detector matters mostly in the narrow corridor between the two.
 \label{sec:noise}
 
 For a circular aperture of radius $r$ containing
-$N_{\rm pix} = \pi r^2 / p^2$ pixels ($p$ = plate scale per pixel), the
-extracted source signal is $S = \dot S\,\mathrm{EE}(r)\,t_{\rm exp}$, the sky
-signal is $B = \dot B\,\pi r^2\, t_{\rm exp}$ from the observed surface
-brightness of Sect.~\ref{sec:sky}, and the dark charge is
-$D = \dot d\,N_{\rm pix}\,t_{\rm exp}$. The S/N is the CCD equation extended
-with the multiplicative and quantization terms:
+$N_{\rm pix} = \pi r^2 / p^2$ pixels ($p$ = plate scale per pixel,
+arcsec), the extracted source signal is
+$S = \dot S\,\mathrm{EE}(r)\,t_{\rm exp}$ electrons (rate $\times$
+encircled-energy fraction $\times$ exposure), the sky signal is
+$B = \dot B\,\pi r^2\, t_{\rm exp}$ from the observed surface
+brightness of Sect.~\ref{sec:sky} ($\dot B$ in e$^-$/s/arcsec$^2$), and
+the dark charge is $D = \dot d\,N_{\rm pix}\,t_{\rm exp}$ with $\dot d$
+the dark-current rate per pixel. The S/N is the CCD equation extended
+with the multiplicative, quantization and background-estimation terms:
 \begin{equation}
   \mathrm{S/N} \;=\;
-  \frac{S}{\sqrt{\;S + B + D + N_{\rm pix}\,\sigma_R^2
-        + \big(S\,\sigma_{\rm scint}/I\big)^2
-        + N_{\rm pix}\, g^2/12\;}} ,
+  \frac{S}{\sqrt{\;S + f_{\rm sub}\big[B + D + N_{\rm pix}\,\sigma_R^2
+        + N_{\rm pix}\, g^2/12\big]
+        + \big(S\,\sigma_{\rm scint}/I\big)^2\;}} ,
+  \qquad
+  f_{\rm sub} = 1 + \frac{N_{\rm pix}}{n_{\rm sky}},
   \label{eq:snr}
 \end{equation}
-with the scintillation fraction of Eq.~(\ref{eq:scint}) and the ADC
-quantization variance $g^2/12$ per pixel \citep{janesick2001}. Flat-field
+with the scintillation fraction of Eq.~(\ref{eq:scint}), the ADC
+quantization variance $g^2/12$ per pixel \citep{janesick2001}, and the
+sky-subtraction factor $f_{\rm sub}$ \citep{merline1995}: the classical
+CCD equation assumes the per-pixel background is known exactly, but in
+practice it is \emph{estimated} from $n_{\rm sky}$ annulus pixels and
+subtracted, which propagates the estimate's own noise into every aperture
+pixel. For $n_{\rm sky} = 3 N_{\rm pix}$ the background noise grows by
+15\%; $n_{\rm sky} \to \infty$ (or the entered 0) recovers the ideal
+equation. Scintillation stays outside the factor because it is carried by
+the source, not the background. Flat-field
 residuals are deliberately not modelled. The inverse problem --- the exposure
 that reaches a requested S/N --- is solved in closed form from the quadratic
 obtained from Eq.~(\ref{eq:snr}) with the Poisson terms proportional to $t$.
@@ -54,6 +67,7 @@ Scintillation   & $(S\,\sigma_{\rm scint}/I)^2$ & $\propto t^{1}$\,$^{a}$ &
 \citet{young1967,osborn2015} \\
 Quantization    & $N_{\rm pix}\,g^2/12$ & per frame & \citet{janesick2001} \\
 Extra background & $\dot b\,N_{\rm pix}\,t$ & $\propto t\,N_{\rm pix}$ & \citet{etc42} \\
+Sky subtraction & $\times\,(1 + N_{\rm pix}/n_{\rm sky})$ & on background terms & \citet{merline1995} \\
 \bottomrule
 \end{tabular}
 

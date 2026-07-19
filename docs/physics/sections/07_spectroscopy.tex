@@ -16,7 +16,9 @@ seeing: its resolution element is the star image itself, dispersed. The
 engine treats both with the same per-element bookkeeping so that their
 trade-off can be compared honestly for the same hardware.
 
-All spectroscopic quantities are per resolution element. The wavelength grid
+All spectroscopic quantities are per resolution element (``resel''): the
+wavelength interval $\Delta\lambda$ the instrument cannot subdivide, one
+output row of the ETC. The wavelength grid
 is logarithmic at constant $R$ in slit mode, or linear with the resolution
 element $\Delta\lambda = \mathcal{D}\,\ell$ in slitless mode
 ($\mathcal{D}$ = dispersion in \si{\angstrom}/pixel, $\ell$ = LSF FWHM in
@@ -24,6 +26,35 @@ pixels). Source and sky rates follow Eq.~(\ref{eq:rate}) restricted to each
 element, and the S/N applies Eq.~(\ref{eq:snr}) with
 $N_{\rm pix}$ = (dispersion pixels per element) $\times$ (spatial extraction
 pixels).
+
+\subsection{Per-element integration: why bin integrals, not samples}
+\label{sec:binint}
+
+How the template flux is booked into resolution elements decides whether
+line spectroscopy is trustworthy. Sampling the template at the element's
+central wavelength and multiplying by $\Delta\lambda$ — the obvious
+shortcut — is correct only for spectra smooth on the scale of
+$\Delta\lambda$. For a spectral \emph{line} narrower than the element it
+is wrong in a way that depends on luck: the line is fully counted if a
+sample lands on it and lost if none does, so the \emph{total} detected
+line flux changes with the chosen $R$ — unphysical, since dispersing the
+same photons more or less finely cannot create or destroy them. The
+v10.1 audit measured an $8\times$ spread in the detected counts of a
+\SI{2}{\angstrom} emission line between $R = 200$ and $R = 20000$ under
+point sampling. Since v10.2 each element's source counts are the exact
+\emph{integral} of the calibrated template over the element,
+\begin{equation}
+  \dot S_i \;=\; \eta\,A \int_{\lambda_i - \Delta\lambda_i/2}
+  ^{\lambda_i + \Delta\lambda_i/2}
+  \flam^{\rm cal}\, T_\lambda\, Q_\lambda\, O_\lambda\,
+  T_{\rm atm}^{\,X}\, \frac{\lambda}{hc}\, d\lambda ,
+\end{equation}
+evaluated for all elements at once by cumulative trapezoidal integration
+on the union of the template grid and the element edges (exact for the
+piecewise-linear tabulated inputs, and $O(n)$ — a single pass even at
+$R = 10^5$). Total line counts are now invariant under $R$ to better
+than 0.2\% (regression-tested), and $\sigma(\mathrm{EW})$
+(Sect.~\ref{sec:ew}) inherits that reliability.
 
 \subsection{Slit mode}
 \label{sec:slit}
@@ -45,9 +76,37 @@ nominal $R$.
 In slitless spectroscopy the resolution element is set by the image quality,
 not by a slit: $\ell = \sqrt{(s/p)^2 + \ell_0^2 + \ell_{\rm AD}^2}$ combines
 seeing, the intrinsic grating LSF and the atmospheric-dispersion smear
-within one element. The sole extraction aperture is the cross-dispersion
-height; the sky per element covers (dispersion pixels $\times$ extraction
-height).
+within one element ($s$ = seeing FWHM, $p$ = plate scale, $\ell_0$ =
+intrinsic LSF in pixels, $\ell_{\rm AD}$ = dispersion smear in pixels).
+The sole extraction aperture is the cross-dispersion height.
+
+\paragraph{The slitless sky is a full-bandpass background.} The decisive
+physical difference from a slit is what happens to the \emph{sky}.
+Dispersing a spatially \emph{uniform} source leaves the detector
+illumination uniform: every wavelength of sky lands on every pixel,
+merely shifted, and the shifts of a uniform field are invisible. A
+slitless pixel therefore receives the sky integrated over the
+\emph{entire} grating bandpass,
+\begin{equation}
+  \dot B_{\rm pix} \;=\; p^2\, \eta\, A\, \varepsilon_g
+  \int_{\lambda_{\rm min}}^{\lambda_{\rm max}}
+  \mu_\lambda^{\rm sky}\, T_\lambda\, Q_\lambda\, O_\lambda\,
+  \frac{\lambda}{hc}\, d\lambda ,
+  \label{eq:slitless-sky}
+\end{equation}
+with $\mu_\lambda^{\rm sky}$ the sky spectral surface brightness per
+arcsec$^2$, $p^2$ the pixel solid angle and $\varepsilon_g$ the grating
+efficiency; the sky per element is $\dot B_{\rm pix}$ times the
+extraction pixels. This is the classical reason objective-grating spectra
+are sky-limited. Booking only one element's $\Delta\lambda$ of sky per
+pixel — as a slit would allow — underestimates the background by the
+ratio (bandpass width)/(element width), about two orders of magnitude for
+a Star Analyser covering \SI{3300}{\angstrom} with \SI{28}{\angstrom}
+elements; the v10.1 audit measured a $118\times$ deficit, corrected in
+v10.2 and regression-tested. Practical consequence: slitless S/N under a
+bright sky is far worse than a slit ETC intuition suggests, and the
+mode's advantage survives only for short exposures on brighter targets —
+which is precisely how Star Analysers are productively used.
 
 For a transmission grating in the converging beam --- the Star Analyser
 100/200 geometry --- the first-order deviation is
@@ -99,6 +158,15 @@ and feeds the ETC's resolving-power field, which remains editable; an
 LHIRES III-like configuration (2400 lines/mm, $f=200$~mm Littrow, 25-\si{\micro\metre}
 slit) returns $R \simeq 2\times10^4$ at H$\alpha$, in line with the
 instrument's specification.
+
+Two guards keep the entered $R$ honest (v10.2). With the geometry
+supplied and the clamp option enabled, the engine itself limits the
+entered $R$ to the geometry's value at the band centre — a physically
+impossible $R$ can then no longer silently inflate every per-element
+prediction. Conversely, when the seeing disc is much \emph{narrower}
+than the slit the delivered resolution is set by the star image, i.e.\
+finer than the slit-limited $R$; the engine flags this case so the user
+knows the reported $R$ is conservative.
 
 \subsection{Equivalent-width detectability}
 \label{sec:ew}

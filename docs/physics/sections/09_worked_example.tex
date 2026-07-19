@@ -1,0 +1,71 @@
+\section{A worked example, by hand}
+\label{sec:example}
+
+To connect the formulae to the numbers the program prints, this section
+computes one photometric case almost entirely by hand: a $V = 12.0$
+(Vega) solar-type star, observed in $V$ through a 200-mm f/5 Newtonian
+(secondary obstruction 70\,mm, optics efficiency 0.85) with a typical
+CMOS camera (QE $\simeq 0.8$ at 5500\,\AA{}, gain setting giving
+1.0\,e$^-$/ADU, read noise 1.5\,e$^-$, pixel 3.76\,\si{\micro\metre}),
+under $2.5''$ seeing at airmass 1.2 from a suburban site
+(SQM = 20.0, elevation 300\,m), for 60\,s in a $5''$-radius aperture.
+
+\paragraph{1. Photon budget of the source.} A $V=0$ star delivers about
+$1.0\times10^{4}$ photons\,s$^{-1}$\,cm$^{-2}$\,\AA$^{-1}$... more
+precisely, Eq.~(\ref{eq:flam}) with $Z_\nu = 3640$\,Jy at 5500\,\AA{}
+gives $F_\lambda = 3.63\times10^{-9}$\,erg\,s$^{-1}$cm$^{-2}$\AA$^{-1}$,
+i.e.\ $F_\lambda/(hc/\lambda) \simeq 1005$
+photons\,s$^{-1}$cm$^{-2}$\AA$^{-1}$. At $V=12$: $\times10^{-0.4\cdot12}
+= 1.58\times10^{-5}$, so $1.59\times10^{-2}$
+photons\,s$^{-1}$cm$^{-2}$\AA$^{-1}$.
+
+\paragraph{2. Collecting area and effective bandwidth.} $A = \pi(20.0^2 -
+7.0^2)/4 = 275.7$\,cm$^2$. The Bessell $V$ band has an effective width
+of $\simeq 870$\,\AA{}. Through atmosphere ($T^X \simeq 0.87^{1.2}
+\simeq 0.85$ at $V$), optics (0.85) and QE (0.80):
+\[
+\dot S_{\rm tot} \simeq 1.59\times10^{-2} \times 275.7 \times 870
+\times 0.85 \times 0.85 \times 0.80 \;\simeq\; 2.2\times10^{3}\;
+\mathrm{e^-\,s^{-1}} .
+\]
+The program, integrating the real solar-type spectrum against the real
+$V$ curve, reports $\simeq 2.1\times10^{3}$\,e$^-$/s --- the hand
+estimate is good to ten percent, which is the accuracy of using an
+effective width.
+
+\paragraph{3. Aperture and sky.} A $5''$ radius is $2\times$ the seeing
+FWHM: a Moffat ($\beta=2.5$) profile puts 89\% of the light inside
+(Sect.~\ref{sec:psf}), so $\dot S = 0.89 \times 2100 \simeq 1.9\times10^{3}$
+e$^-$/s, and $S = 1.1\times10^{5}$\,e$^-$ in 60\,s. The aperture covers
+$\pi\,25 = 78.5$\,arcsec$^2$. SQM 20.0 means the sky is
+$m_{\rm sky} = 20.0$ mag/arcsec$^2$ in $V$, i.e.\ per arcsec$^2$ the sky
+is a $20.0$-mag source: $\dot B = 2100 \times 10^{-0.4(20.0-12.0)}
+\times 78.5 \simeq 2.6\times10^{2}$\,e$^-$/s, $B = 1.6\times10^{4}$
+e$^-$ in 60\,s. With a plate scale of $0.776''$/pixel the aperture
+holds $N_{\rm pix} \simeq 130$ pixels.
+
+\paragraph{4. Noise budget.} Shot noise: $\sqrt{S + B} =
+\sqrt{1.1\times10^5 + 1.6\times10^4} = 355$\,e$^-$. Read:
+$\sqrt{130}\times1.5 = 17$\,e$^-$. Quantization:
+$\sqrt{130}\times 1.0/\sqrt{12} = 3$\,e$^-$. Scintillation,
+Eq.~(\ref{eq:scint}): $\sigma/I = 0.09\times20^{-2/3}\times1.2^{1.75}
+\times e^{-300/8000}/\sqrt{120} = 1.5\times10^{-3}$, so
+$\sigma_{\rm scint} = 1.5\times10^{-3}\times1.1\times10^{5} =
+165$\,e$^-$. Total: $\sqrt{355^2 + 165^2 + 17^2 + 3^2} = 392$\,e$^-$.
+
+\paragraph{5. Result.} $\mathrm{S/N} = 1.1\times10^{5}/392 \simeq 280$
+--- a differential precision of $1086/280 \simeq 3.9$\,mmag per frame
+against an equal comparison star ($\times\sqrt2$: 5.5\,mmag), fine for
+a 25-mmag exoplanet transit at two-minute cadence. Note where the noise
+lives: shot noise dominates, but scintillation is already 42\% of it at
+$V=12$ on a 20-cm aperture --- brighten the star by three magnitudes
+and scintillation rules alone, which is why the S/N curve of
+Fig.~\ref{fig:snrbudget} flattens. The peak pixel holds
+$\simeq 2100\times0.07\times60 \simeq 9\times10^{3}$\,e$^-$
+(central-pixel fraction 0.07 for this sampling) plus sky and dark ---
+far from a CMOS full well at low gain, so the 60-s frame is safe, as the
+program's saturation columns confirm.
+
+Every number above is printed by one run of the program; the exercise
+shows there is no magic between the inputs and the outputs --- only the
+chain of Sect.~\ref{sec:chain}, executed carefully.

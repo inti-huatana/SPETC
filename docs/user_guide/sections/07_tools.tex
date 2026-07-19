@@ -1,6 +1,7 @@
 \section{Command-line tools}
 
 \subsection{Calibrating your own filters: \code{make\_filter\_profile.py}}
+\label{sec:tool-filter}
 
 Amateur filters (Astrodon, Astronomik, Baader, Optolong RGB and
 narrowband) are not in the SVO database, but a transmission curve is all
@@ -22,6 +23,7 @@ against the shipped SVO profiles). Add the two printed lines to
 same photometric scale as the professional passbands.
 
 \subsection{Importing template spectra: \code{add\_template.py}}
+\label{sec:tool-template}
 
 Template spectra can be two-column ASCII \emph{or} CALSPEC/STScI-style
 FITS tables (\code{WAVELENGTH}/\code{FLUX}; Angstrom, nm or micron units
@@ -47,6 +49,7 @@ the computed \code{mv0} matter. Files that do not fully cover the $V$
 band are flagged; use $V$ as the reference filter for those.
 
 \subsection{Headless runs: \code{spetc\_batch.py}}
+\label{sec:tool-batch}
 
 \begin{verbatim}
 python3 spetc_batch.py examples/batch_photometry.json out/

@@ -1,6 +1,21 @@
 \section{Spectroscopic ETC}
 \label{sec:spectroscopy}
 
+Spectroscopy divides the same photons that photometry collects into
+hundreds or thousands of wavelength bins, so its S/N per bin is lower by
+$\sqrt{N_{\rm bins}}$-like factors and every loss mechanism bites harder.
+Two geometries are modelled, and they fail in opposite ways. A
+\emph{slit} spectrograph defines its resolution optically and pays for it
+at the entrance: slit losses, extraction losses, and --- unless the slit
+tracks the parallactic angle --- chromatic losses from atmospheric
+dispersion that can silently remove half the blue signal. A
+\emph{slitless} grating (the Star Analyser class) pays nothing at an
+entrance it does not have, collects every photon of source \emph{and}
+sky at every wavelength, and instead surrenders resolution to the
+seeing: its resolution element is the star image itself, dispersed. The
+engine treats both with the same per-element bookkeeping so that their
+trade-off can be compared honestly for the same hardware.
+
 All spectroscopic quantities are per resolution element. The wavelength grid
 is logarithmic at constant $R$ in slit mode, or linear with the resolution
 element $\Delta\lambda = \mathcal{D}\,\ell$ in slitless mode

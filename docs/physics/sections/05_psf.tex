@@ -1,6 +1,20 @@
 \section{Point-spread function and aperture coupling}
 \label{sec:psf}
 
+The point-spread function is the currency in which three different
+questions are paid: how much of a star's light enters a photometric
+aperture of a given radius, how much passes a slit of a given width and
+decentring, and how much lands on the single brightest pixel (the
+saturation question). All three are integrals of the same profile over
+different domains, and all three are sensitive to the profile's
+\emph{wings}: real seeing profiles carry far more energy at large radii
+than a Gaussian of the same FWHM, which makes Gaussian-based aperture
+corrections optimistic and Gaussian-based saturation predictions
+slightly pessimistic. \spetc{} therefore offers both the Gaussian (for
+comparability with other tools) and the Moffat profile (for realism),
+everywhere through analytic expressions --- no PSF is ever rendered or
+numerically integrated, which keeps the whole-night time series fast.
+
 The seeing-limited PSF is selectable between a circular Gaussian and a
 circular \citet{moffat1969} profile
 \begin{equation}

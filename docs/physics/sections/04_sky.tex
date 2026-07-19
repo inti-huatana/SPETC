@@ -1,6 +1,19 @@
 \section{Night-, twilight- and day-sky model}
 \label{sec:sky}
 
+For faint targets the sky, not the detector, is the adversary: once the
+background electrons in the aperture outnumber the source electrons, the
+S/N grows only as the square root of exposure time and every magnitude of
+extra sky brightness costs a factor 2.5 in required time. An ETC is
+therefore only as honest as its sky model. \spetc{}'s model has an
+unusual property for a tool in this class: it is \emph{position- and
+time-dependent}. The same target yields a different sky --- and a
+different exposure recommendation --- depending on where it sits with
+respect to the ecliptic (zodiacal light), the Milky Way (integrated
+starlight), the Moon (scattered moonlight), the Sun (twilight), and the
+local zenith (airglow path length), all evaluated per time sample of the
+night. The components and their assembly are as follows.
+
 \subsection{Dark sky}
 
 The dark-sky normalization is the broad-band $U$--$K$ surface-brightness

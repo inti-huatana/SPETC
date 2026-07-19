@@ -1,6 +1,20 @@
 \section{Photometric ETC}
 \label{sec:photometry}
 
+Aperture photometry is conceptually the simplest measurement the program
+models --- add up the electrons in a circle, subtract the sky --- and
+precisely for that reason it is where every term of the noise budget can
+be seen individually at work. This section assembles the budget term by
+term, then treats the three questions layered on top of it: when does the
+detector saturate; how should a long integration be split into frames;
+and what precision does a \emph{differential} measurement against a
+comparison star achieve, which is the number variable-star and exoplanet
+observers actually need. A reader who wants one formula to take away
+should take Eq.~(\ref{eq:snr}); a reader who wants one insight should
+take Fig.~\ref{fig:snrbudget}: from the ground, bright-star photometry is
+scintillation-limited, faint-star photometry is sky-limited, and the
+detector matters mostly in the narrow corridor between the two.
+
 \subsection{Signal and noise budget}
 \label{sec:noise}
 

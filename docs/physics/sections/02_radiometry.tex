@@ -1,6 +1,19 @@
 \section{Radiometric framework}
 \label{sec:radiometry}
 
+The radiometric layer solves one problem: converting between the
+languages of catalogues (magnitudes in named bands and systems) and the
+language of detectors (photo-electrons per second). The conversion must
+be exact in its conventions, because its errors are invisible ---
+a wrong zero point or a magnitude-system confusion does not crash
+anything, it just biases every prediction by a constant factor. The
+layer therefore leans on three externally defined standards: the AB
+system's universal 3631-Jy zero point, the SVO Filter Profile Service's
+definition of a filter (transmission curve + zero point + detector-type
+flag, all in one file), and the CALSPEC absolute spectrophotometry that
+anchors the Vega scale. Everything else in the program consumes this
+layer's outputs and never touches a magnitude again.
+
 \subsection{Magnitude systems and zero points}
 
 A magnitude $m$ in a system with $F_\nu$ zero point $Z_\nu$ (in Jy)

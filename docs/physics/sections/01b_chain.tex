@@ -1,0 +1,87 @@
+\section{The measurement chain: how the pieces fit together}
+\label{sec:chain}
+
+Before the formula-by-formula derivations, this section tells the story
+once, end to end, so that each later section can be read as a close-up of
+one link in a chain you have already seen whole.
+
+\subsection{From a magnitude to a spectrum}
+
+The user gives the program one brightness number --- ``the target is
+magnitude 12.3 in $V$'' --- but a detector does not respond to
+magnitudes; it responds to photons per wavelength. The first task is
+therefore to turn one number into a full spectral energy distribution.
+This is what the \emph{template} is for: an absolutely calibrated
+spectrum of a star of similar type supplies the \emph{shape}
+$F_\lambda(\lambda)$, and the magnitude supplies the \emph{level}. The
+connection between the two is the synthetic-photometry machinery of
+Sect.~\ref{sec:radiometry}: the program computes what magnitude the
+template \emph{would} have in the user's reference band, and rescales the
+whole spectrum by the ratio to the requested magnitude. Because the
+rescaling is total, the template's own flux units are immaterial --- only
+its shape and its internal calibration matter --- which is why CALSPEC
+standards, surface-brightness planet atlases and arbitrary-unit
+supernova models can all serve as templates
+(Sect.~\ref{sec:radiometry}). The one number that anchors this step is
+the catalogue's $m_{v0}$, the magnitude the template file itself
+represents; it is the fulcrum on which the whole calibration turns.
+
+\subsection{From a spectrum above the atmosphere to electrons in a pixel}
+
+The calibrated spectrum then runs the gauntlet of the light path, each
+element a multiplicative wavelength-dependent factor inside one integral,
+Eq.~(\ref{eq:rate}):
+
+\begin{center}
+$F_\lambda$ (target, top of atmosphere)
+$\;\rightarrow\; T_{\rm atm}(\lambda)^{X}$ (Sect.~\ref{sec:atmosphere})
+$\;\rightarrow\; A\,\eta\,O_\lambda$ (telescope and optics)
+$\;\rightarrow\; T_\lambda$ (filter)
+$\;\rightarrow\; Q_\lambda$ (detector QE)
+$\;\rightarrow\;$ electrons s$^{-1}$
+\end{center}
+
+The atmosphere enters twice more, in subtler roles than mere absorption:
+it \emph{blurs} (the seeing PSF of Sect.~\ref{sec:psf}, which decides how
+much light a finite aperture or slit captures and how bright the peak
+pixel gets), it \emph{disperses} (differential refraction,
+Sect.~\ref{sec:dispersion}, which drains blue light out of a misaligned
+slit), and it \emph{twinkles} (scintillation,
+Sect.~\ref{sec:scintillation}, a noise proportional to the signal
+itself). And the sky above the site is not dark: the sky model of
+Sect.~\ref{sec:sky} --- airglow, zodiacal light, starlight, moonlight,
+twilight, or simply the user's SQM reading --- adds its own electrons to
+every aperture and every resolution element, through the same instrument
+chain.
+
+\subsection{From electrons to a decision}
+
+The last link converts electron counts into the quantities an observer
+decides with. The CCD equation, Eq.~(\ref{eq:snr}), combines the source
+against every accumulated noise: its own shot noise, the sky's, dark
+current, read noise per pixel, scintillation, quantization. Solved
+forward it yields the S/N of a given exposure; inverted
+(Sect.~\ref{sec:stack}) it yields the exposure for a requested S/N, and,
+when that exposure would saturate the brightest pixel --- which the
+program predicts independently, from the unextracted PSF peak --- the
+stack planner divides it into feasible frames. Spectroscopy adds one
+more translation: from S/N per resolution element to the
+equivalent-width uncertainty $\sigma(\mathrm{EW})$ of
+Sect.~\ref{sec:ew}, which states directly which spectral lines a night
+can measure. Everything downstream of the electron counts is exact
+bookkeeping; everything upstream is physics with stated approximations
+--- the map of which is drawn in Sect.~\ref{sec:expectations}.
+
+\subsection{Where each ingredient comes from}
+
+Every factor in the chain is data the user controls, and each has a
+documented file format (User Guide, Sect.~6): the template from the
+catalogue; the filter transmission and zero point from an SVO profile
+(downloaded or synthesised from a measured curve,
+Sect.~\ref{sec:filters}); the QE, optics response and gain table from
+the camera's datasheet; the atmospheric transmission from a site FITS
+table or the built-in broad-band fallback; the sky level from the
+physical model or a hand-held SQM meter. The design intent is that
+\emph{nothing physical is hidden in the code}: what the program assumes,
+a file or a visible control states, and the run log in the Results
+window records.

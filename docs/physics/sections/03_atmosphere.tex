@@ -1,6 +1,19 @@
 \section{Atmosphere}
 \label{sec:atmosphere}
 
+The atmosphere acts on a ground-based measurement in four physically
+distinct ways, and \spetc{} models each separately: it \emph{absorbs and
+scatters} light out of the beam (extinction), it \emph{bends} the beam
+(refraction, which changes the apparent altitude and, through its
+wavelength dependence, disperses the image into a tiny vertical
+spectrum), it \emph{blurs} the image (seeing, treated in
+Sect.~\ref{sec:psf}), and it \emph{modulates} the total received flux on
+millisecond timescales (scintillation). Confusing these roles is the
+commonest source of error in home-made exposure calculators --- e.g.\
+applying an extinction correction twice, or ignoring scintillation
+because ``the photon noise is already counted''. This section fixes the
+conventions for each.
+
 \subsection{Extinction}
 
 Zenith transmission $T_{\rm atm}(\lambda)$ comes either from a
@@ -89,3 +102,19 @@ with $d$ the aperture diameter, $E$ the site elevation and $t_{\rm exp}$
 the exposure time. Because this noise is multiplicative in the source flux,
 it dominates bright-star photometry and imposes a hard S/N ceiling
 $\simeq I/\sigma_{\rm scint}$ per exposure (Fig.~\ref{fig:snrbudget}).
+
+The scalings deserve a moment's reflection, because they run against
+photon intuition. Photon noise improves with a brighter star;
+scintillation does not --- the fractional modulation is a property of the
+turbulence, not of the source, so above the crossover magnitude
+(roughly $V \sim 10$--12 for decimetre apertures at 60\,s) nothing about
+the star helps any more. What does help: aperture ($d^{-2/3}$ --- a
+40-cm telescope has $1.6\times$ less scintillation noise than a 20-cm),
+airmass (a steep $X^{1.75}$ --- observing at $X=2$ instead of 1.2
+doubles it), altitude of the \emph{site} (the $e^{-E/8\,{\rm km}}$
+factor is why mountain observatories twinkle less), and total time
+($t^{-1/2}$, whether in one frame or many --- Sect.~\ref{sec:stack}).
+For two stars measured differentially the correlation of their
+scintillation decays with angular separation; \spetc{} conservatively
+treats the two as uncorrelated (Sect.~\ref{sec:differential}), which for
+arcminute separations is close to the truth at short exposures.

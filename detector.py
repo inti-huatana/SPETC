@@ -109,9 +109,13 @@ class Detector:
         self.dark_current_e_s_pix = float(dark_current_e_s_pix)
         if self.read_noise_e < 0 or self.dark_current_e_s_pix < 0:
             raise ValueError("Read noise and dark current must be non-negative.")
-        self.sensor_type = str(sensor_type).strip().lower()
+        # Accept the user-facing labels 'monochrome'/'color' as aliases of the
+        # internal 'mono'/'osc'.
+        sensor = str(sensor_type).strip().lower()
+        sensor = {"monochrome": "mono", "colour": "osc", "color": "osc"}.get(sensor, sensor)
+        self.sensor_type = sensor
         if self.sensor_type not in {"mono", "osc"}:
-            raise ValueError("Sensor type must be 'mono' or 'osc'.")
+            raise ValueError("Sensor type must be 'mono'/'monochrome' or 'osc'/'color'.")
         self.osc_channel = str(osc_channel).strip().upper()
         if self.sensor_type == "osc" and self.osc_channel not in self.OSC_CHANNEL_FRACTION:
             raise ValueError("OSC channel must be R, G, or B.")

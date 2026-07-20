@@ -207,24 +207,27 @@ raises the curve to the current airmass itself, exactly once. Outside the
 file's wavelength range the edge values are extended (an atmosphere does
 not become opaque where a file ends).
 
-\subsection{Sites: \code{etc\_sites.json} and \code{observatories.json}}
+\subsection{Sites: \code{observatories.json}}
 
-Your personal site list is a JSON file next to the program:
+All sites --- the shipped defaults and any you save --- live in a single
+JSON list next to the program, \code{observatories.json}:
 
 \begin{verbatim}
-{ "schema_version": 1,
-  "sites": [
-    { "name": "My backyard", "lat": 45.4064, "lon": 11.8768,
-      "elev": 12, "utc_offset_h": 1, "timezone": "Europe/Rome",
-      "sky_ab_mag_arcsec2": 19.8 } ] }
+[
+  { "name": "My backyard", "lat": 45.4064, "lon": 11.8768,
+    "elev": 12, "mag_sky": 19.8,
+    "timezone": "Europe/Rome", "utc_offset_h": 1 }
+]
 \end{verbatim}
 
 \code{lat}/\code{lon} are decimal degrees (north and east positive),
-\code{elev} metres, \code{sky\_ab\_mag\_arcsec2} the default value for the
-fixed-sky mode. You rarely edit this file by hand: \textsf{Save current
-site} writes the entry for you, and \textsf{Import site file} merges
-another user's file into yours. \code{observatories.json} holds the
-shipped defaults in a simpler flat format and is not meant to be edited.
+\code{elev} metres, \code{mag\_sky} the default value for the fixed-sky
+mode, and \code{timezone}/\code{utc\_offset\_h} set the observation time
+reference automatically when the site is selected. You rarely edit this
+file by hand: \textsf{Save site} writes the entry for you, and
+\textsf{Import\ldots} merges another user's JSON into it. (The former
+\code{etc\_sites.json} is no longer used; \code{observatories.json} is now
+the single site store.)
 
 \subsection{Instrument profiles}
 \label{sec:profiles}

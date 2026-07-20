@@ -109,7 +109,7 @@ class SpectroscopyETC:
                              slit_at_parallactic=True,
                              include_atmospheric_dispersion=True,
                              radial_velocity_kms=0.0, ebv=0.0,
-                             slit_geometry=None):
+                             slit_geometry=None, grating_efficiency_curve=None):
         if resolution_R <= 0 or t_exp_s <= 0 or pixels_per_resel <= 0:
             raise ValueError("Resolution, exposure time, and sampling must be positive.")
         lo, hi = map(float, wavelength_range)
@@ -309,13 +309,21 @@ class SpectroscopyETC:
         fine_instrument = instrument_transmission(fine_q, self.telescope)
         fine_atmosphere = atmospheric_transmission(fine_q, self.atmosphere)
         fine_energy_erg = (h * c / fine_q).to_value(u.erg)
+        # Grating efficiency: a wavelength-dependent curve (if supplied) takes
+        # precedence over the scalar and folds directly into the integrands.
+        if grating_efficiency_curve is not None:
+            geff_wave, geff_values = as_angstrom_curve(grating_efficiency_curve, "grating efficiency")
+            geff_wave_aa = geff_wave.to_value(u.AA)
+            fine_grating_eff = np.clip(np.interp(fine, geff_wave_aa, geff_values,
+                                                 left=geff_values[0], right=geff_values[-1]), 0.0, 1.0)
+        else:
+            fine_grating_eff = np.full(fine.size, float(grating_efficiency))
         fine_integrand = (fine_flam * fine_filter * fine_qe * fine_instrument * fine_atmosphere
-                          * area_cm2 * efficiency / fine_energy_erg)
+                          * fine_grating_eff * area_cm2 * efficiency / fine_energy_erg)
         cumulative = np.concatenate(([0.0], np.cumsum(
             0.5 * (fine_integrand[1:] + fine_integrand[:-1]) * np.diff(fine))))
-        source_rates_unextracted = ((np.interp(edges_hi, fine, cumulative)
-                                     - np.interp(edges_lo, fine, cumulative))
-                                    * grating_efficiency)
+        source_rates_unextracted = (np.interp(edges_hi, fine, cumulative)
+                                    - np.interp(edges_lo, fine, cumulative))
         source_rates = source_rates_unextracted * source_fraction
 
         # --- Sky ---
@@ -344,9 +352,10 @@ class SpectroscopyETC:
             # The slit restricts the sky to slit width x extraction height,
             # and each resel sees only its own dlam of sky.
             sky_transmission = np.ones(n) if sky_observed_at_telescope else atmosphere_trans
+            grating_eff_resel = np.interp(wave_aa, fine, fine_grating_eff)
             sky_rates = (sky_flam_arcsec2(wave_aa) * sky_area * observing_transmission * qe
                          * instrument_trans * sky_transmission * area_cm2 * efficiency
-                         / photon_energy_erg * dlam_aa) * grating_efficiency * fill
+                         / photon_energy_erg * dlam_aa) * grating_eff_resel * fill
         else:
             # Slitless: dispersing a spatially uniform source leaves the
             # detector uniformly illuminated, so *every pixel* receives sky
@@ -357,10 +366,10 @@ class SpectroscopyETC:
             # two orders of magnitude in a typical Star Analyser setup.
             fine_sky_trans = np.ones(fine.size) if sky_observed_at_telescope else fine_atmosphere
             sky_integrand = (sky_flam_arcsec2(fine) * plate_scale**2 * fine_filter * fine_qe
-                             * fine_instrument * fine_sky_trans * area_cm2 * efficiency
+                             * fine_instrument * fine_sky_trans * fine_grating_eff * area_cm2 * efficiency
                              / fine_energy_erg)
             trapezoid = getattr(np, "trapezoid", None) or getattr(np, "trapz")
-            sky_rate_per_pixel = float(trapezoid(sky_integrand, fine)) * grating_efficiency
+            sky_rate_per_pixel = float(trapezoid(sky_integrand, fine))
             sky_rates = np.full(n, sky_rate_per_pixel * dispersion_pixels_per_resel
                                 * spatial_pixels * fill)
         source_e_unextracted = source_rates_unextracted * t_exp_s

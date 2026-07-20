@@ -10,12 +10,20 @@ among resolution elements. You have three ways to supply it, in
 increasing order of fidelity. If you know $R$ from your spectrograph's
 documentation, type it into \textsf{Slit resolving power R} and you are
 done. If you know your \emph{hardware} instead --- most amateurs do ---
-fill the three geometry fields (grating grooves per mm, collimator focal
+fill the geometry fields (grating grooves per mm, collimator focal
 length, camera focal length) and press \textsf{Compute R from geometry}:
 the program combines them with the telescope focal length, your slit
 width and the seeing through the grating equation, fills the R field,
 and tells you whether the resolution is limited by the slit or by the
-seeing --- if it says ``seeing-limited'', a narrower slit would only lose
+seeing. One point surprises many users: \emph{changing only the camera
+focal length does not change $R$}. This is correct, not a bug --- the
+camera magnifies the slit image and the dispersion by the same factor, so
+it cancels out of $R$ (which is set by the slit width, collimator focal
+length, grating and telescope focal length). The camera focal length
+instead sets the physical size of the spectrum on the detector, i.e.\ the
+\si{\angstrom}/pixel and how many pixels sample one resolution element ---
+which is why the three focal lengths (telescope, collimator, camera) are
+separate fields and none is a copy of another --- if it says ``seeing-limited'', a narrower slit would only lose
 light without sharpening the spectrum. Finally, if you have a
 \emph{measured} $R$-versus-slit-width curve for your instrument, load it
 in the telescope column and it silently overrides the nominal value

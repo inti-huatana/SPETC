@@ -48,7 +48,10 @@ The \textbf{Telescope} box holds only the optics: primary diameter, central
 obstruction, focal length, scalar optics throughput (excluding QE), and an
 optional calibrated instrument-response curve with its wavelength unit. The
 separate \textbf{Detector} box holds pixel size, gain, full well, ADC bit
-depth, read noise and dark current; a \textbf{Load QE CSV} button that reads
+depth, read noise and dark current; the detector dimensions
+\textbf{L$\times$W} in pixels (length along dispersion, width across it,
+both $>0$, default $1024\times1024$) used to check whether a spectrum and
+its diffraction orders fit on the chip; a \textbf{Load QE CSV} button that reads
 the detector quantum efficiency from a two-column (wavelength, QE) file (the
 status beside it shows the loaded file, or \code{qe.dat} loaded by default);
 the QE wavelength unit; the optional calibrated slit resolving-power curve;
@@ -106,15 +109,19 @@ enter stays the \emph{total} integrated magnitude), and the optional
 \textbf{comparison-star magnitude} for differential photometry — the
 mmag-per-frame precision appears in the label below. The spectroscopy
 panel holds the resolving power, slit width, extraction height, sampling,
-the slitless parameters (Sect.~\ref{sec:spec-guide}), the wavelength range
-and the S/N reference wavelength, the \textbf{slit orientation}
-(\code{parallactic} or \code{fixed}), and the grating efficiency. A
-\emph{single} \textbf{grating lines/mm} field feeds both the slitless
-disperser and the Littrow geometry helper (the previous duplicate field is
-gone). Grating efficiency can be either a scalar 0--1 or a
-wavelength-dependent curve loaded from a two-column CSV with
-\textsf{Load CSV\ldots} (the curve overrides the scalar; \textsf{Clear}
-reverts). The \textbf{spectrograph geometry helper} takes the
+the slitless parameters (Sect.~\ref{sec:spec-guide}), the \textbf{WL
+min/max/ref} on one row with an \textbf{AA/nm/um} unit selector, the
+\textbf{slit orientation} (\code{parallactic} or \code{fixed}), and the
+grating efficiency. The fields of the mode you are not using are greyed
+out: choose \code{slit} and the slitless fields disable, choose
+\code{slitless} and the slit fields disable. Likewise, choosing photometry
+in the CALCULATION box greys the whole SPECTROSCOPY box, and choosing
+spectroscopy greys the whole PHOTOMETRY box. A \emph{single} \textbf{grating
+lines/mm} field feeds both the slitless disperser and the Littrow geometry
+helper. Grating efficiency is one row --- a \code{value}/\code{file}
+selector, the scalar entry, and \textsf{Load CSV\ldots}: with \code{value}
+the scalar applies and the load button is greyed; with \code{file} the
+loaded wavelength-dependent curve applies and the scalar entry is greyed. The \textbf{spectrograph geometry helper} takes the
 collimator/camera focal lengths and that grating lines/mm value; press
 \textsf{Compute R from geometry} and the Littrow grating equation fills the
 R field (which stays editable) and reports whether you are slit- or
@@ -154,7 +161,17 @@ $(B-V)_0$ of the unreddened template and the reddened $(B-V)$, and — for
 spectroscopy — the RV shift in pixels and the velocity sampling
 (km/s per pixel) at 4000, 5000, 6000 and \SI{7000}{\angstrom}.
 
-\subsection{Run actions}
+\subsection{Run actions and utilities}
 
-\textsf{Run ETC}, the live observatory status (Sun/Moon altitude, current
-airmass of the target), and \textsf{Exit} (which saves the configuration).
+The fifth column has \textsf{Run ETC} and \textsf{Exit} (which saves the
+configuration) side by side on one row, the live observatory status
+(local time, LST, MJD/JD, Sun altitude), and three small converters. The
+\textbf{time converter} takes a wide ISO/ISOT/MJD/JD input (defaulting to
+the moment the program started) with a \textsf{Now} button, and
+\textbf{Input}/\textbf{Output} format selectors on one row. The
+\textbf{coordinate converter} turns a DMS latitude/longitude into decimal
+degrees. The \textbf{length converter} converts a positive value (negative
+input is taken as its absolute value) between any two of inch, foot, yard,
+mile, \aa ngstr\"om, nm, \textmu m, mm, cm, m, km, parsec and light-year;
+results between $10^{-5}$ and $10^{5}$ are shown in full, otherwise in
+exponential notation.

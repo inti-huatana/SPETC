@@ -33,10 +33,20 @@ Three tabs:
         S/N, scintillation noise in electrons and as a percentage of the
         source, ADC noise, peak-pixel and saturation numbers, predicted
         magnitudes, the unreddened $(B-V)_0$ and reddened $(B-V)$ colours,
-        (for spectroscopy) the RV shift in pixels and the km/s-per-pixel
-        sampling, the $\sigma$(EW) line criterion, the stack plan and the
-        differential-photometry precision.
+        the $\sigma$(EW) line criterion, the stack plan and the
+        differential-photometry precision. For spectroscopy it also lists
+        the RV shift in pixels and km/s-per-pixel sampling, the
+        \textbf{spectrum length in pixels} with a pass/fail against the
+        detector $L$; the \textbf{visible diffraction orders} (slitless)
+        with their start/end pixel from the zero order and a flag if an
+        order runs off the chip; and the \textbf{Horne (1986) optimal
+        extraction width} in arcsec and pixels.
 \end{itemize}
+
+For \textbf{photometry}, the \textbf{Selected-time result} tab keeps the
+usual row for the entered magnitude, then a divider, then a greyed block of
+the same calculation at the target magnitude $\pm1\ldots\pm7$, so the whole
+brightness response is visible at a glance.
 
 \subsection{Scientific plots}
 

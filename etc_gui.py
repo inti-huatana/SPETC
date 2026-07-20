@@ -173,9 +173,18 @@ class ETCGUI(tk.Tk):
 
     def _build_observation_column(self, holder):
         f = self._section(holder, "OBSERVATION DATE")
-        self.date_var = self._var("date", datetime.now().strftime("%Y-%m-%d"))
-        self.time_var = self._var("time", "22:00")
-        self.time_ref_var = self._var("time_reference", "local")
+
+        self.date_var = self._var("date", "")
+        self.time_var = self._var("time", "")
+            
+        self.time_ref_var = self._var("time_reference", "UT")
+
+        if not self.date_var.get().strip():
+            self.date_var.set(datetime.now().strftime("%Y-%m-%d"))
+        
+        if not self.time_var.get().strip():
+            self.time_var.set("00:00")
+    
         self.utc_offset_var = self._var("utc_offset_h", "1")
         self.timezone_var = self._var("timezone", "Europe/Rome")
         self.timezone_source_var = self._var("timezone_source", "iana")
@@ -184,10 +193,37 @@ class ETCGUI(tk.Tk):
         # Compact single row: Date [entry] Time [entry] [UT/local menu].
         datetime_row = ttk.Frame(f)
         datetime_row.grid(row=0, column=0, columnspan=2, sticky="w")
+
         ttk.Label(datetime_row, text="Date").pack(side="left")
-        ttk.Entry(datetime_row, textvariable=self.date_var, width=11).pack(side="left", padx=(3, 8))
+        date_entry = ttk.Entry(datetime_row, textvariable=self.date_var, width=11)
+        date_entry.pack(side="left", padx=(3, 8))
+        
         ttk.Label(datetime_row, text="Time").pack(side="left")
-        ttk.Entry(datetime_row, textvariable=self.time_var, width=6).pack(side="left", padx=(3, 8))
+        time_entry = ttk.Entry(datetime_row, textvariable=self.time_var, width=6)
+        time_entry.pack(side="left", padx=(3, 8))
+        
+        def add_placeholder(entry, variable, placeholder):
+            label = ttk.Label(entry, text=placeholder, foreground="grey")
+            label.place(relx=0.04, rely=0.5, anchor="w")
+        
+            def refresh(*_):
+                if variable.get().strip() or entry.focus_get() is entry:
+                    label.place_forget()
+                else:
+                    label.place(relx=0.04, rely=0.5, anchor="w")
+        
+            def focus_entry(_event=None):
+                entry.focus_set()
+                label.place_forget()
+        
+            label.bind("<Button-1>", focus_entry)
+            entry.bind("<FocusIn>", focus_entry)
+            entry.bind("<FocusOut>", refresh)
+            variable.trace_add("write", refresh)
+            refresh()
+        
+        add_placeholder(date_entry, self.date_var, "YYYY-MM-DD")
+        add_placeholder(time_entry, self.time_var, "HH:MM")
         ttk.Combobox(datetime_row, textvariable=self.time_ref_var, state="readonly", width=6,
                      values=("local", "UT")).pack(side="left")
         source_frame = ttk.Frame(f)

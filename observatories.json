@@ -1,10 +1,10 @@
 [
-  {"name": "INAF Asiago", "lon": 11.568645, "lat": 45.848538, "elev": 1360, "mag_sky": 21.20},
-  {"name": "ESO Paranal", "lon": -70.404472, "lat": -24.627850, "elev": 2635, "mag_sky": 21.70},
-  {"name": "ESO La Silla 3P6", "lon": -70.731447, "lat": -29.26095, "elev": 2390, "mag_sky": 21.20},
-  {"name": "ESO ELT", "lon": -70.19161, "lat": -24.589254, "elev": 3060, "mag_sky": 21.20},
-  {"name": "Mauna Kea", "lon": -155.4731, "lat": 19.8207, "elev": 4207, "mag_sky": 21.80},
-  {"name": "Kitt Peak", "lon": -111.5993, "lat": 31.9599, "elev": 2095, "mag_sky": 21.50},
-  {"name": "Sutherland", "lon": 20.8102, "lat": -32.3826, "elev": 1798, "mag_sky": 21.10},
-  {"name": "Roque de los Muchachos", "lon": -17.8774, "lat": 28.7635, "elev": 2396, "mag_sky": 21.55}
+  {"name": "INAF Asiago", "lon": 11.568645, "lat": 45.848538, "elev": 1360, "mag_sky": 21.20, "timezone": "Europe/Rome", "utc_offset_h": 1},
+  {"name": "ESO Paranal", "lon": -70.404472, "lat": -24.627850, "elev": 2635, "mag_sky": 21.70, "timezone": "America/Santiago", "utc_offset_h": -4},
+  {"name": "ESO La Silla 3P6", "lon": -70.731447, "lat": -29.26095, "elev": 2390, "mag_sky": 21.20, "timezone": "America/Santiago", "utc_offset_h": -4},
+  {"name": "ESO ELT", "lon": -70.19161, "lat": -24.589254, "elev": 3060, "mag_sky": 21.20, "timezone": "America/Santiago", "utc_offset_h": -4},
+  {"name": "Mauna Kea", "lon": -155.4731, "lat": 19.8207, "elev": 4207, "mag_sky": 21.80, "timezone": "Pacific/Honolulu", "utc_offset_h": -10},
+  {"name": "Kitt Peak", "lon": -111.5993, "lat": 31.9599, "elev": 2095, "mag_sky": 21.50, "timezone": "America/Phoenix", "utc_offset_h": -7},
+  {"name": "Sutherland", "lon": 20.8102, "lat": -32.3826, "elev": 1798, "mag_sky": 21.10, "timezone": "Africa/Johannesburg", "utc_offset_h": 2},
+  {"name": "Roque de los Muchachos", "lon": -17.8774, "lat": 28.7635, "elev": 2396, "mag_sky": 21.55, "timezone": "Atlantic/Canary", "utc_offset_h": 0}
 ]

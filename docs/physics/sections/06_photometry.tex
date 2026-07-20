@@ -1,25 +1,52 @@
 \section{Photometric ETC}
 \label{sec:photometry}
 
+Aperture photometry is conceptually the simplest measurement the program
+models --- add up the electrons in a circle, subtract the sky --- and
+precisely for that reason it is where every term of the noise budget can
+be seen individually at work. This section assembles the budget term by
+term, then treats the three questions layered on top of it: when does the
+detector saturate; how should a long integration be split into frames;
+and what precision does a \emph{differential} measurement against a
+comparison star achieve, which is the number variable-star and exoplanet
+observers actually need. A reader who wants one formula to take away
+should take Eq.~(\ref{eq:snr}); a reader who wants one insight should
+take Fig.~\ref{fig:snrbudget}: from the ground, bright-star photometry is
+scintillation-limited, faint-star photometry is sky-limited, and the
+detector matters mostly in the narrow corridor between the two.
+
 \subsection{Signal and noise budget}
 \label{sec:noise}
 
 For a circular aperture of radius $r$ containing
-$N_{\rm pix} = \pi r^2 / p^2$ pixels ($p$ = plate scale per pixel), the
-extracted source signal is $S = \dot S\,\mathrm{EE}(r)\,t_{\rm exp}$, the sky
-signal is $B = \dot B\,\pi r^2\, t_{\rm exp}$ from the observed surface
-brightness of Sect.~\ref{sec:sky}, and the dark charge is
-$D = \dot d\,N_{\rm pix}\,t_{\rm exp}$. The S/N is the CCD equation extended
-with the multiplicative and quantization terms:
+$N_{\rm pix} = \pi r^2 / p^2$ pixels ($p$ = plate scale per pixel,
+arcsec), the extracted source signal is
+$S = \dot S\,\mathrm{EE}(r)\,t_{\rm exp}$ electrons (rate $\times$
+encircled-energy fraction $\times$ exposure), the sky signal is
+$B = \dot B\,\pi r^2\, t_{\rm exp}$ from the observed surface
+brightness of Sect.~\ref{sec:sky} ($\dot B$ in e$^-$/s/arcsec$^2$), and
+the dark charge is $D = \dot d\,N_{\rm pix}\,t_{\rm exp}$ with $\dot d$
+the dark-current rate per pixel. The S/N is the CCD equation extended
+with the multiplicative, quantization and background-estimation terms:
 \begin{equation}
   \mathrm{S/N} \;=\;
-  \frac{S}{\sqrt{\;S + B + D + N_{\rm pix}\,\sigma_R^2
-        + \big(S\,\sigma_{\rm scint}/I\big)^2
-        + N_{\rm pix}\, g^2/12\;}} ,
+  \frac{S}{\sqrt{\;S + f_{\rm sub}\big[B + D + N_{\rm pix}\,\sigma_R^2
+        + N_{\rm pix}\, g^2/12\big]
+        + \big(S\,\sigma_{\rm scint}/I\big)^2\;}} ,
+  \qquad
+  f_{\rm sub} = 1 + \frac{N_{\rm pix}}{n_{\rm sky}},
   \label{eq:snr}
 \end{equation}
-with the scintillation fraction of Eq.~(\ref{eq:scint}) and the ADC
-quantization variance $g^2/12$ per pixel \citep{janesick2001}. Flat-field
+with the scintillation fraction of Eq.~(\ref{eq:scint}), the ADC
+quantization variance $g^2/12$ per pixel \citep{janesick2001}, and the
+sky-subtraction factor $f_{\rm sub}$ \citep{merline1995}: the classical
+CCD equation assumes the per-pixel background is known exactly, but in
+practice it is \emph{estimated} from $n_{\rm sky}$ annulus pixels and
+subtracted, which propagates the estimate's own noise into every aperture
+pixel. For $n_{\rm sky} = 3 N_{\rm pix}$ the background noise grows by
+15\%; $n_{\rm sky} \to \infty$ (or the entered 0) recovers the ideal
+equation. Scintillation stays outside the factor because it is carried by
+the source, not the background. Flat-field
 residuals are deliberately not modelled. The inverse problem --- the exposure
 that reaches a requested S/N --- is solved in closed form from the quadratic
 obtained from Eq.~(\ref{eq:snr}) with the Poisson terms proportional to $t$.
@@ -39,13 +66,91 @@ Read            & $N_{\rm pix}\sigma_R^2$ & per frame & --- \\
 Scintillation   & $(S\,\sigma_{\rm scint}/I)^2$ & $\propto t^{1}$\,$^{a}$ &
 \citet{young1967,osborn2015} \\
 Quantization    & $N_{\rm pix}\,g^2/12$ & per frame & \citet{janesick2001} \\
+Extra background & $\dot b\,N_{\rm pix}\,t$ & $\propto t\,N_{\rm pix}$ & \citet{etc42} \\
+Sky subtraction & $\times\,(1 + N_{\rm pix}/n_{\rm sky})$ & on background terms & \citet{merline1995} \\
 \bottomrule
 \end{tabular}
+
+\smallskip
+{\footnotesize The \emph{extra background} $\dot b$ [e$^-$/s/pixel] is an
+optional catch-all Poisson term for detector glow, stray/scattered light or
+ghosting not covered by the sky model, adopted from ETC-42's
+\code{ExtraBackgroundNoise}; it also enters the peak-pixel prediction.}
 
 \smallskip
 {\footnotesize $^{a}$ $S \propto t$ while $\sigma_{\rm scint}/I \propto
 t^{-1/2}$, so the S/N ceiling $I/\sigma_{\rm scint} \propto \sqrt{t}$.}
 \end{table}
+
+\subsection{Exposure solving and stack planning}
+\label{sec:stack}
+
+The exposure reaching a requested S/N solves the quadratic obtained from
+Eq.~(\ref{eq:snr}). Crucially, the scintillation variance is \emph{linear}
+in time — with $\sigma/I = C(2t)^{-1/2}$ the variance of $\dot S t$
+electrons is $(\dot S C)^2 t/2$ — so it enters the closed form exactly as
+an additional Poisson-like rate added to $Q = \dot S + \dot B + \dot D$:
+\begin{equation}
+  t \;=\; \frac{\mathrm{SNR}^2\big(Q + \dot S^2 C^2/2\big)
+  + \sqrt{\;\cdot\;^2 + 4\dot S^2\,\mathrm{SNR}^2 N_{\rm pix}\sigma_R^2}}
+  {2\dot S^2}.
+  \label{eq:texp}
+\end{equation}
+Without this term a bright-star exposure request undershoots badly (a
+demonstration case returned S/N 230 for a 500 target); with it the solved
+exposure reproduces the requested S/N to better than 2\% (regression
+tested).
+
+The \textbf{stack planner} answers the practical amateur question ``how
+many subs?'': the sub-exposure is the shortest of the user's preference
+and the saturation limit of the brightest pixel; the total time for $N$
+frames of length $t_{\rm sub}$ follows in closed form from the stacked
+CCD equation $\mathrm{SNR} = \dot S T/\sqrt{QT + N N_{\rm pix}\sigma_R^2}$
+(the scintillation rate is framing-independent, since it averages down
+with total time). Reported alongside are the read-noise penalty relative
+to one ideal long exposure and the frame length above which the background
+variance exceeds $10\,\sigma_R^2$ per pixel — the classical
+``sky-limited'' criterion.
+
+\subsection{Differential photometry}
+\label{sec:differential}
+
+For variable-star and exoplanet work the scientific quantity is the
+differential precision against a comparison star of magnitude $m_c$, in
+millimagnitudes per frame:
+\begin{equation}
+  \sigma_{\rm diff} \;=\; 1085.7\,
+  \sqrt{\mathrm{SNR}_t^{-2} + \mathrm{SNR}_c^{-2}} \quad [\mathrm{mmag}],
+\end{equation}
+where both S/N values carry the full budget of Eq.~(\ref{eq:snr}) — each
+star scintillates — and the two scintillation terms are treated as
+uncorrelated, which is conservative for the arcminute-scale separations
+typical of ensemble photometry \citep{osborn2015}.
+
+\subsection{CMOS gain description}
+
+Amateur CMOS cameras change conversion gain, read noise and full well
+\emph{together} with the gain setting. The detector is therefore
+describable by a per-camera table (setting $\rightarrow$ e$^-$/ADU,
+$\sigma_R$, FWC) rather than one fixed triple; the selected row feeds
+Eq.~(\ref{eq:snr}), the quantization term $g^2/12$ and the saturation
+limits simultaneously, so switching the gain setting consistently moves
+the S/N, the ADC ceiling and the maximum unsaturated exposure.
+
+\subsection{One-shot-colour (Bayer) sensors}
+\label{sec:osc}
+
+For a colour camera read out as a single channel, the Bayer mosaic assigns
+the channel a fixed area fraction $f$ of the focal plane ($f = 1/2$ for
+green, $1/4$ for red and blue). Aperture- or extraction-integrated source
+and sky rates therefore scale by $f$, and only $f N_{\rm pix}$ of the
+aperture pixels contribute read and dark noise for that channel. The
+\emph{peak pixel} is not scaled: a channel pixel at the PSF centre receives
+the full local flux through its own dye, so saturation prediction is
+unchanged. The quantum-efficiency curve must be the channel's
+\emph{effective} QE — sensor QE times the colour-filter-array dye
+transmission — which manufacturers publish per channel. Without this
+treatment an OSC user overestimates the collected signal by $2$--$4\times$.
 
 \subsection{Saturation}
 

@@ -1,12 +1,18 @@
-# SPETC v10.0
+# SPETC v10.2
 
 Spectro-Photometry Exposure Time Calculator.
 
-Version 10.0
+Version 10.2
 
 2007-2026
 
 Mauro Barbieri (`mauro.barbieri@pm.me`)
+
+Full documentation (compiled PDFs and LaTeX sources) is in `docs/`:
+`SPETC_physics.pdf` (the models and formulae), `SPETC_user_guide.pdf`
+(operation, every input file format specified in full) and
+`SPETC_maintainer_guide.pdf` (architecture, modification recipes, Git
+workflow, packaging).
 
 ## Run
 
@@ -122,6 +128,24 @@ automatically restored with that profile.
 * **SQM / Bortle sky mode**: enter your zenith SQM reading (V mag/arcsec²),
   or pick a Bortle class to fill a typical value; band colours and the
   Krisciunas & Schaefer Moon model are applied on top.
+* **Wavelength- and airmass-dependent seeing** (opt-in checkbox): when
+  enabled, the entered seeing is treated as the zenith V value and scaled as
+  `FWHM = seeing_V x airmass^0.6 x (lambda/5000)^-0.2` (Kolmogorov turbulence;
+  the convention used by ETC-42, CeSAM/LAM). Blue light is then more blurred
+  than red — colouring the spectroscopic slit losses — and the seeing
+  worsens as the target descends, which the whole-night time series now
+  reflects. Off by default (flat seeing, unchanged).
+* **Generic extra background** (e-/s/pixel): a catch-all Poisson background
+  term for detector glow, stray/scattered light or ghosting that the
+  physical model does not otherwise cover (cf. ETC-42's ExtraBackgroundNoise).
+  It adds to the background noise and the peak-pixel/saturation prediction.
+* **One-shot-colour (Bayer/OSC) sensors**: select `osc` and the channel
+  (R/G/B). A single-channel extraction sees only that channel's share of
+  the mosaic (G 1/2, R/B 1/4): aperture source and sky rates and the
+  channel-pixel count scale accordingly, while the peak pixel does not (a
+  centred channel pixel still receives the full local flux), so saturation
+  stays correct. Supply the channel's *effective* QE (sensor QE × CFA dye
+  transmission, digitizable from the maker's curves) as the QE curve.
 * **Stack planner**: with a target S/N, the ETC reports N × sub-exposure
   (sub capped by saturation or your preference), total time, the
   read-noise penalty versus one ideal exposure, and the frame length above
@@ -153,6 +177,153 @@ automatically restored with that profile.
   variance** in closed form (it is linear in time, so it enters as an
   extra Poisson-like rate): solved exposures reproduce the requested S/N
   even for bright, scintillation-limited stars.
+
+## Physics-audit fixes and additions (v10.2)
+
+A full physics audit of v10.1 (`PHYSICS_AUDIT_v10.1.md`) found two
+demonstrable errors, one suspect dataset and a list of missing standard
+terms. All of them are implemented and regression-tested in v10.2:
+
+* **Slitless sky (severe fix)**: dispersing a uniform source leaves the
+  detector uniformly illuminated, so every slitless pixel receives sky from
+  the **entire grating bandpass**. The sky is now the full-band per-pixel
+  integral (~118× larger than the old per-resel booking for a typical Star
+  Analyser setup); slitless S/N under bright sky is accordingly — and
+  correctly — much lower.
+* **R-invariant line fluxes (severe fix)**: per-resel source counts are now
+  exact **bin integrals** of the calibrated template (cumulative trapezoid
+  on a union grid) instead of centre-point samples; total counts of a
+  narrow emission line no longer depend on the chosen R (previously up to
+  8× spread). σ(EW) inherits the fix.
+* **Daylight sky re-anchored**: the supplied daylight table read as
+  mag/arcsec² was ~4.5 mag too faint; its shape is kept and its brightest
+  entry re-anchored to the physical V = 4.0 mag/arcsec². Twilight blending
+  inherits the correction and now runs on the **geometric** Sun altitude
+  (the standard convention); sunrise/set use the −50′ upper-limb rule.
+* **Sky-subtraction noise**: a new *sky annulus pixels* field adds the
+  Merline & Howell `(1 + n_pix/n_sky)` factor to every background variance
+  term in both engines and in the exposure solver.
+* **Moonlight distance**: the Krisciunas & Schaefer illuminance is scaled
+  by `(384400/d_moon)²` from the topocentric track distance (±15% over the
+  month).
+* **Zodiacal elongation**: the zodiacal component now brightens toward the
+  Sun (Leinert-style power law, ~4× at 60° elongation).
+* **Airglow slant extinction**: the van Rhijn enhancement is attenuated by
+  Kasten–Young slant-path tropospheric extinction, matching the observed
+  horizon behaviour.
+* **Telluric bands** (opt-in checkbox): parametric O₂/H₂O absorption bands
+  (B and A bands, water bands to 9400 Å) with curve-of-growth airmass
+  scaling on top of the smooth extinction curve.
+* **Guiding blur**: an entered guiding rms adds image-motion blur in
+  quadrature to the seeing in every PSF coupling.
+* **Template transforms**: optional radial velocity (λ(1+v/c)) and
+  interstellar reddening E(B−V) (CCM89, R_V = 3.1) applied to the template
+  before calibration — the entered magnitude stays the observed one.
+* **Consistent QE policy**: spectroscopy now zero-fills QE and observing
+  filter outside their coverage exactly like photometry (no more crashes on
+  red-end ranges photometry accepts).
+* **Alias-free band integrals**: photometric integration runs on the union
+  of the filter grid, the template grid and a dense baseline, so coarse
+  filter tables no longer skip narrow template lines.
+* **R sanity**: an optional clamp limits the entered slit R to what the
+  entered spectrograph geometry can deliver; an underfilled slit
+  (seeing ≪ slit) is flagged as seeing-limited (entered R conservative).
+
+## Local horizon profile from the Copernicus DEM
+
+The OBSERVATORY panel can compute the real terrain horizon of your site.
+Enter a search radius (default 10, range 1–100 km; a `miles` unit selector
+converts for you) and press **Generate horizon profile**: the program
+downloads the Copernicus GLO-30 digital elevation model tiles around your
+coordinates (public AWS bucket, no credentials; the tiles are cached in
+`dem_cache/` so later runs are offline), resamples them onto a local
+metric grid, and traces the apparent horizon elevation in 360 azimuth
+steps, including the Earth-curvature drop and the standard 34′ horizontal
+refraction. The result is saved automatically as CSV in `data/horizons/`
+(`horizon_lat…_lon…_r…km.csv`: a commented header with the site metadata,
+then `azimuth_deg,horizon_elevation_deg` rows; azimuth N=0/E=90). The
+computation runs in the background — the window stays responsive — and
+**Display horizon** plots the saved profile for the current coordinates.
+This feature needs two extra libraries, installed on demand:
+`pip install rasterio pyproj` (everything else in SPETC works without
+them).
+
+## Adding template spectra: CALSPEC FITS and STScI atlases
+
+Template spectra can be two-column ASCII **or CALSPEC/STScI-style FITS
+binary tables** (a WAVELENGTH/FLUX table; TUNIT in Angstrom, nm or micron
+is honoured). This covers the whole STScI reference-atlas family: the
+CALSPEC standards, the solar-system surface-brightness atlas
+(Jupiter/Saturn/Uranus/Neptune, solar spectrum), the galactic
+emission-line atlas (Orion, NGC 7009), the transient templates (SN
+Ia/Iax/91bg/Ib/II, kilonova) and the CLOUDY planetary-nebula grids.
+
+Import with:
+
+```bash
+python3 add_template.py path/to/spectrum_or_directory [name] [spt]
+```
+
+The tool copies the file under `data/imported/`, computes the **synthetic
+Vega V magnitude of the file** (this is the catalogue `mv0` — the
+magnitude the file represents) and B−V against the shipped Bessell
+profiles, reports the response-weighted V coverage, and appends the
+`interpola.db.csv` row. Because the ETC always rescales templates to your
+entered magnitude, files with arbitrary or surface-brightness flux units
+(the transients, the planet atlas) are fully usable: only the spectral
+shape matters, and the computed `mv0` keeps the normalization
+self-consistent.
+
+Caveats the tool enforces or flags: a template must at least reach the V
+band (`mv0` cannot be derived otherwise); when it covers less than 99% of
+the V response (e.g. the planet atlas, which starts at 0.53 µm) the `mv0`
+is flagged approximate and you should use **V as the reference filter**
+for that template, so the exact same-response path is used and no
+truncated synthetic integral enters the calibration. For the planet
+surface-brightness spectra pair the template with the **extended-source
+mode** (enter the integrated magnitude and the disc area). Line-dominated
+templates (PN grids at R=6000, the emission-line atlas) are valid up to
+the resolution they were computed at — requesting much higher R dilutes
+the lines.
+
+## Outputs and where to find them
+
+The Results window has three tabs; everything below is also in the CSV
+exports (**Save result CSV** carries every engine field, **Save time-series
+CSV** the per-time table).
+
+**Selected-time result** (per magnitude row in photometry; per wavelength in
+spectroscopy) shows every quantity the engine produced:
+
+| Quantity | Meaning |
+|---|---|
+| `Source e-/s`, `Sky e-/s` | detected rates in the aperture / per resolution element |
+| `S/N` | full noise budget: photon + sky + dark + read + **scintillation** (Young law) + **ADC quantization** (gain/√12) |
+| `σ(EW) [mÅ]` | **spectral-line criterion** (Cayrel 1988): 1.5·√(FWHM·δx)/(S/N per pixel). A line is measurable when its expected equivalent width exceeds ≈3 σ(EW) |
+| `Scint [e-]`, `ADC noise [e-]` | the two non-Poisson noise terms, in electrons, so their weight is visible |
+| `Peak [e-]`, `Peak ADU`, `Sat`, `Max t [s]` | brightest-pixel prediction, saturation cause (`FULL_WELL`/`ADC`/`BOTH`/`NONE`) and the longest unsaturated single frame |
+| `Std obs mag` / `Instr mag` | synthetic standard magnitude in the observing filter vs. the instrument-weighted response magnitude |
+| `Sky mag/"²` | the sky surface brightness actually used at the selected time |
+
+**Time series** adds per time sample: UTC/local time, MJD, elevation,
+azimuth, **parallactic angle**, Pickering airmass, S/N or required exposure,
+sky brightness, band-effective extinction (total and per airmass),
+absorption-adjusted apparent magnitude, saturation flag, peak electrons and
+maximum unsaturated exposure.
+
+**Assumptions / outputs** states, in plain language, every model the run
+used (sky mode and its SQM/table inputs, PSF model, gain-table setting,
+slit-spectrograph geometry, noise terms, saturation policy) followed by a
+**SELECTED-TIME OUTPUTS** block with the S/N, the scintillation and ADC
+noise in electrons (and the scintillation as a percentage of the source),
+the peak-pixel/saturation numbers, the predicted magnitudes, the σ(EW)
+line criterion, the **stack plan** (N × sub-exposure, limiting factor,
+read-noise penalty) and the **differential-photometry precision** in mmag
+against the entered comparison star.
+
+The main-window labels mirror the two planning results live: the stack
+plan under CALCULATION and the differential precision / σ(EW) under
+PHOTOMETRY.
 
 ## Physical conventions
 
@@ -263,3 +434,12 @@ Krisciunas & Schaefer scattering function, position-dependent sky, Pickering
 airmass, parallactic angle, Moffat PSF, Filippenko dispersion, scintillation
 and quantization noise scales, Star Analyser dispersion and extended-source
 photometry.
+
+## RNAAS article
+
+`docs/rnaas/` contains a Research Notes of the AAS manuscript presenting the
+tool: `spetc_rnaas_aastex.tex` is the submission-ready AASTeX 6.3.1 source
+(compile where `aastex631.cls` is available, e.g. the AAS submission system),
+and `main.tex`/`docs/SPETC_rnaas_preprint.pdf` is an identical-text preprint
+rendering that compiles with the bundled `compile.sh`. Body text is ~590
+words, one figure — within the RNAAS limits (1000 words, one figure).

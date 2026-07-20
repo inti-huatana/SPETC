@@ -20,20 +20,29 @@ position-dependent night-sky model with van Rhijn airglow, zodiacal light,
 integrated starlight and Krisciunas--Schaefer moonlight; Gaussian and Moffat
 point-spread functions; the complete noise budget including scintillation and
 quantization; slit and slitless (Star Analyser) spectroscopy; and the
-treatment of extended sources. Expected performance and the known limits of
-validity are summarized.
+treatment of extended sources. Every symbol used in the document is defined
+in a dedicated notation section. Version 10.2 adds the physics of the full
+audit of the code: full-bandpass slitless sky, resolution-invariant bin
+integration of templates, sky-subtraction noise, lunar distance and
+zodiacal-elongation dependence, airglow slant-path extinction, telluric
+bands, guiding blur, and radial-velocity/reddening template transforms.
+Expected performance and the known limits of validity are summarized.
 \end{abstract}
 
 \tableofcontents
 
 \input{sections/01_introduction}
+\input{sections/01b_chain}
+\input{sections/01c_notation}
 \input{sections/02_radiometry}
 \input{sections/03_atmosphere}
 \input{sections/04_sky}
 \input{sections/05_psf}
 \input{sections/06_photometry}
 \input{sections/07_spectroscopy}
+\input{sections/08_filters}
 \input{sections/08_expectations}
+\input{sections/09_worked_example}
 
 \bibliography{references}
 

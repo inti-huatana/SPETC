@@ -20,7 +20,8 @@ from astroquery.simbad import Simbad
 
 from ephemeris import compute_target_track
 from photometry import PhotometryETC
-from spectroscopy import SpectroscopyETC, slit_spectrograph_resolving_power
+from spectroscopy import (SpectroscopyETC, slit_spectrograph_resolving_power,
+                          grating_dispersion_aa_per_pixel)
 from detector import Detector, load_qe_curve, load_transmission_curve, load_gain_table
 from spectral_utils import load_fits_transmission_curve, interpolate_zero_filled
 from solvers import exposure_time_for_snr, plan_stack
@@ -31,9 +32,9 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib_plots import show_photometry_plot, show_spectroscopy_plot
 from sky_background import sky_magnitude_vega, SKY_WAVELENGTH_AA, SKY_MAG_VEGA
-from observing_conditions import scintillation_variance_rate_e2_s
+from observing_conditions import scintillation_variance_rate_e2_s, effective_seeing_arcsec
 from sky_brightness import sky_brightness_total, BAND_WAVELENGTH_NM, BAND_VEGA_ZEROPOINT_JY
-from etc_physics import synthetic_magnitude, magnitude_f_lambda
+from etc_physics import synthetic_magnitude, magnitude_f_lambda, transformed_template
 
 
 CONFIG_FILE = Path(__file__).with_name("etc_user_config.json")
@@ -220,6 +221,23 @@ class ETCGUI(tk.Tk):
         self._entry(f, 3, "Elevation (m):", self.elev_var)
         ttk.Button(f, text="Save current site…", command=self._save_current_site).grid(row=4, column=0, columnspan=2, sticky="ew", pady=(4, 1))
         ttk.Button(f, text="Import site file…", command=self._import_site_file).grid(row=5, column=0, columnspan=2, sticky="ew", pady=1)
+        self.horizon_radius_var = self._var("horizon_radius", "10")
+        self.horizon_unit_var = self._var("horizon_radius_unit", "km")
+        ttk.Label(f, text="Horizon radius (1-100 km):").grid(row=6, column=0, sticky="w")
+        horizon_row = ttk.Frame(f); horizon_row.grid(row=6, column=1, sticky="ew")
+        horizon_row.columnconfigure(0, weight=1)
+        ttk.Entry(horizon_row, textvariable=self.horizon_radius_var, width=7).grid(row=0, column=0, sticky="ew")
+        ttk.Combobox(horizon_row, textvariable=self.horizon_unit_var, state="readonly", width=6,
+                     values=("km", "miles")).grid(row=0, column=1, padx=(3, 0))
+        self.horizon_generate_button = ttk.Button(f, text="Generate horizon profile (DEM)…",
+                                                  command=self._generate_horizon)
+        self.horizon_generate_button.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(3, 1))
+        ttk.Button(f, text="Display horizon", command=self._display_horizon).grid(
+            row=8, column=0, columnspan=2, sticky="ew", pady=1)
+        self.horizon_status_var = tk.StringVar(
+            value="Horizon from Copernicus GLO-30 (internet needed once; tiles cached). CSV saved automatically.")
+        ttk.Label(f, textvariable=self.horizon_status_var, foreground="gray35", wraplength=320,
+                  justify="left").grid(row=9, column=0, columnspan=2, sticky="w")
 
         f = self._section(holder, "TARGET (ICRS/J2000)")
         self.target_name_var = self._var("target_name", "")
@@ -260,6 +278,17 @@ class ETCGUI(tk.Tk):
         )
         ttk.Label(f, text="The observing filter is independent.", foreground="gray35", wraplength=320, justify="left").grid(row=9, column=0, columnspan=2, sticky="w", pady=(4, 0))
 #        ttk.Label(f, text="The template flux is scaled from its stored Vmag to this measurement. The observing filter is independent.", foreground="gray35", wraplength=320, justify="left").grid(row=9, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        # Radial velocity and interstellar reddening are properties of the
+        # target, entered here and applied to the selected template before
+        # calibration (the entered magnitude stays the observed one).
+        self.radial_velocity_var = self._var("radial_velocity_kms", "0")
+        self.ebv_var = self._var("ebv_mag", "0")
+        self._entry(f, 10, "Radial velocity (km/s):", self.radial_velocity_var)
+        self._entry(f, 11, "Reddening E(B-V) (mag):", self.ebv_var)
+        ttk.Label(f, text="Target RV shifts the template by (1+v/c); E(B-V) reddens it with "
+                          "CCM89 (R_V=3.1). Applied to the template, but properties of the target.",
+                  foreground="gray35", wraplength=320, justify="left").grid(
+                  row=12, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
     def _build_instrument_column(self, holder):
         f = self._section(holder, "TELESCOPE AND DETECTOR")
@@ -300,6 +329,18 @@ class ETCGUI(tk.Tk):
 #        ttk.Label(f, text="Optics response: wavelength, throughput excluding QE. qe.dat is loaded separately.\n"
 #                          "Slit R(width): slit width [arcsec], measured resolving power R.",
 #                  foreground="gray35", wraplength=300, justify="left").grid(row=14, column=0, columnspan=2, sticky="w", pady=(3, 0))
+        self.sensor_type_var = self._var("sensor_type", "mono")
+        self.osc_channel_var = self._var("osc_channel", "G")
+        ttk.Label(f, text="Sensor type:").grid(row=17, column=0, sticky="w")
+        sensor_row = ttk.Frame(f); sensor_row.grid(row=17, column=1, sticky="ew")
+        ttk.Combobox(sensor_row, textvariable=self.sensor_type_var, state="readonly", width=6,
+                     values=("mono", "osc")).grid(row=0, column=0, sticky="w")
+        ttk.Label(sensor_row, text=" channel:").grid(row=0, column=1)
+        ttk.Combobox(sensor_row, textvariable=self.osc_channel_var, state="readonly", width=4,
+                     values=("R", "G", "B")).grid(row=0, column=2, sticky="w")
+        ttk.Label(f, text="osc: single Bayer channel (R/B 1/4, G 1/2 of the pixels). Use the"
+                          " channel's effective QE (sensor QE x CFA dye) as the QE curve.",
+                  foreground="gray35", wraplength=300, justify="left").grid(row=18, column=0, columnspan=2, sticky="w")
         self.gain_table_path_var = self._var("gain_table_path", "")
         self.gain_setting_var = tk.StringVar(value="")
         self.gain_table_rows = []
@@ -340,6 +381,27 @@ class ETCGUI(tk.Tk):
                   foreground="gray35", wraplength=300, justify="left").grid(row=8, column=0, columnspan=2, sticky="w")
         self.psf_model_var = self._var("psf_model", "gaussian")
         self.moffat_beta_var = self._var("moffat_beta", "2.5")
+        self.seeing_scaling_var = self._var("seeing_wavelength_scaling", "0")
+        ttk.Checkbutton(f, text="Scale seeing with wavelength and airmass "
+                                "(entered seeing = zenith V)", variable=self.seeing_scaling_var,
+                        onvalue="1", offvalue="0").grid(row=9, column=0, columnspan=2, sticky="w")
+        self.extra_background_var = self._var("extra_background_e_s_pixel", "0")
+        self._entry(f, 10, "Extra background (e-/s/pixel):", self.extra_background_var)
+        ttk.Label(f, text="Catch-all background per pixel: detector glow, stray/scattered light, "
+                          "ghosting. 0 = none.", foreground="gray35", wraplength=300,
+                  justify="left").grid(row=11, column=0, columnspan=2, sticky="w")
+        self.guiding_rms_var = self._var("guiding_rms_arcsec", "0")
+        self._entry(f, 12, "Guiding rms (arcsec, 0=perfect):", self.guiding_rms_var)
+        self.telluric_var = self._var("include_telluric_bands", "0")
+        ttk.Checkbutton(f, text="Include telluric O2/H2O bands (red/NIR absorption)",
+                        variable=self.telluric_var, onvalue="1", offvalue="0").grid(
+                        row=13, column=0, columnspan=2, sticky="w")
+        self.sky_annulus_var = self._var("sky_annulus_pixels", "0")
+        self._entry(f, 14, "Sky annulus pixels (0=ideal):", self.sky_annulus_var)
+        ttk.Label(f, text="Guiding rms adds image-motion blur to the seeing. Sky annulus: pixels "
+                          "used to measure the background; a finite value adds the (1+n_pix/n_sky) "
+                          "sky-subtraction noise.", foreground="gray35", wraplength=300,
+                  justify="left").grid(row=15, column=0, columnspan=2, sticky="w")
         ttk.Label(f, text="PSF model:").grid(row=3, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.psf_model_var, state="readonly",
                      values=("gaussian", "moffat")).grid(row=3, column=1, sticky="ew")
@@ -455,6 +517,10 @@ class ETCGUI(tk.Tk):
             value="Littrow grating equation; uses telescope FL, slit width, seeing and the S/N reference wavelength. R stays editable.")
         ttk.Label(f, textvariable=self.spec_geometry_status_var, foreground="gray35",
                   wraplength=280, justify="left").grid(row=20, column=0, columnspan=2, sticky="w")
+        self.clamp_r_var = self._var("clamp_r_to_geometry", "0")
+        ttk.Checkbutton(f, text="Clamp R to spectrograph geometry (engine-side sanity limit)",
+                        variable=self.clamp_r_var, onvalue="1", offvalue="0").grid(
+                        row=21, column=0, columnspan=2, sticky="w")
 #        ttk.Label(f, text="Slitless: a Star Analyser 100/200 is described by its grooves/mm and\n"
 #                          "grating-to-sensor distance, which set the dispersion; 0 lines/mm keeps the\n"
 #                          "manual A/pix. 'fixed' slit orientation applies the worst-case Filippenko\n"
@@ -501,6 +567,9 @@ class ETCGUI(tk.Tk):
         ttk.Label(f, textvariable=self.star_status, foreground="blue", wraplength=420, justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
         ttk.Button(f, text="Validate V and B−V", command=self._validate_selected_template).grid(
             row=6, column=0, columnspan=2, sticky="ew", pady=(4, 1))
+        # Radial velocity and reddening are properties of the TARGET, so their
+        # input fields live in the target box (column 1); they are applied to
+        # the selected template.
         self.template_display_var = tk.StringVar(value="Selected template spectrum will appear here.")
         ttk.Label(f, textvariable=self.template_display_var, foreground="blue", wraplength=310,
                   justify="left").grid(row=7, column=0, columnspan=2, sticky="w", pady=(4, 0))
@@ -748,6 +817,112 @@ class ETCGUI(tk.Tk):
                 self._update_timezone_source_state()
             self.sky_var.set(f"{site['sky_ab_mag_arcsec2']:.2f}")
 
+    def _horizon_radius_km(self):
+        value = float(self.horizon_radius_var.get())
+        if self.horizon_unit_var.get() == "miles":
+            value *= 1.609344
+        import horizon_profile
+        if not horizon_profile.MIN_RADIUS_KM <= value <= horizon_profile.MAX_RADIUS_KM:
+            raise ValueError(f"Horizon radius must be 1-100 km "
+                             f"({value:.1f} km requested).")
+        return value
+
+    def _generate_horizon(self):
+        import horizon_profile
+        try:
+            lat, lon = float(self.lat_var.get()), float(self.lon_var.get())
+            radius_km = self._horizon_radius_km()
+        except ValueError as exc:
+            messagebox.showerror("Horizon profile", str(exc)); return
+        self.horizon_generate_button.configure(state="disabled")
+        self.horizon_status_var.set(
+            f"Downloading DEM and computing horizon (r = {radius_km:.1f} km)… "
+            "The window stays responsive; this can take a few minutes on first use.")
+
+        def worker():
+            try:
+                outcome = horizon_profile.generate_horizon(lat, lon, radius_km)
+            except Exception as exc:  # shown to the user, never silent
+                message = str(exc) or exc.__class__.__name__
+                self.after(0, lambda msg=message: self._horizon_done(None, msg))
+                return
+            self.after(0, lambda: self._horizon_done(outcome, None))
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _horizon_done(self, outcome, error):
+        self.horizon_generate_button.configure(state="normal")
+        if error:
+            self.horizon_status_var.set(f"Horizon generation failed: {error}")
+            return
+        self.horizon_status_var.set(
+            f"Horizon saved: {outcome['path'].name} (highest obstruction "
+            f"{outcome['max_horizon_deg']:.1f} deg at azimuth {outcome['max_horizon_azimuth_deg']:.0f}).")
+        self._display_horizon()
+
+    def _current_horizon(self):
+        """Return (azimuths_deg, horizon_deg) for the current site, or None.
+
+        Used to overlay the terrain horizon on the sky path and to mask the
+        target's visibility on the altitude panel.  Any saved profile for
+        these coordinates is used; the search radius is not required to match.
+        """
+        import horizon_profile
+        try:
+            lat, lon = float(self.lat_var.get()), float(self.lon_var.get())
+        except (ValueError, tk.TclError):
+            return None
+        candidates = sorted(horizon_profile.HORIZON_DIR.glob(
+            f"horizon_lat{lat:+.4f}_lon{lon:+.4f}_r*.csv"))
+        if not candidates:
+            return None
+        try:
+            azimuths, horizon, _ = horizon_profile.load_horizon_csv(candidates[-1])
+        except (OSError, ValueError):
+            return None
+        return azimuths, horizon
+
+    def _display_horizon(self):
+        import horizon_profile
+        try:
+            lat, lon = float(self.lat_var.get()), float(self.lon_var.get())
+            radius_km = self._horizon_radius_km()
+        except ValueError as exc:
+            messagebox.showerror("Horizon profile", str(exc)); return
+        path = horizon_profile.horizon_csv_path(lat, lon, radius_km)
+        if not path.is_file():
+            candidates = sorted(horizon_profile.HORIZON_DIR.glob(
+                f"horizon_lat{lat:+.4f}_lon{lon:+.4f}_r*.csv"))
+            if not candidates:
+                messagebox.showinfo("Horizon profile",
+                                    "No saved horizon for these coordinates. Generate one first.")
+                return
+            path = candidates[-1]
+        try:
+            azimuths, horizon, metadata = horizon_profile.load_horizon_csv(path)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Horizon profile", str(exc)); return
+        window = tk.Toplevel(self)
+        window.title(f"Horizon profile - {path.name}")
+        figure = Figure(figsize=(7.4, 3.4), dpi=100)
+        axis = figure.add_subplot(111)
+        axis.fill_between(azimuths, horizon, horizon_profile.HORIZON_MIN_DEG,
+                          where=horizon > horizon_profile.HORIZON_MIN_DEG, color="#b0c4de", alpha=0.7)
+        axis.plot(azimuths, horizon, color="#1f4f82", linewidth=1.2)
+        axis.axhline(0.0, color="#888888", linewidth=0.8, linestyle="--")
+        axis.set(xlim=(0, 360),
+                 ylim=(horizon_profile.HORIZON_MIN_DEG, max(10.0, float(np.max(horizon)) + 3.0)),
+                 xlabel="Azimuth [deg]  (N=0, E=90, S=180, W=270)",
+                 ylabel="Horizon elevation [deg]",
+                 title=f"r = {metadata.get('radius_km', '?')} km, site elevation "
+                       f"{metadata.get('center_elevation_m', float('nan')):.0f} m")
+        axis.set_xticks([0, 45, 90, 135, 180, 225, 270, 315, 360])
+        axis.grid(True, color="#dddddd")
+        canvas = FigureCanvasTkAgg(figure, master=window)
+        canvas.get_tk_widget().pack(fill="both", expand=True, padx=6, pady=6)
+        canvas.draw_idle()
+
     def _save_current_site(self):
         name = simpledialog.askstring("Save current site", "Site name:", initialvalue=self.obs_var.get())
         if not name:
@@ -807,6 +982,7 @@ class ETCGUI(tk.Tk):
             "wavelength_max_aa", "reference_wavelength_aa", "spectroscopy_mode",
             "slitless_extraction_width_arcsec", "slitless_dispersion_aa_pix", "slitless_intrinsic_fwhm_pix",
             "qe_wavelength_unit", "throughput_wavelength_unit",
+            "guiding_rms_arcsec", "include_telluric_bands", "sky_annulus_pixels",
         )
 
     def _update_stack_plan(self, target_snr, source_rate, sky_rate, dark_rate_total,
@@ -869,6 +1045,13 @@ class ETCGUI(tk.Tk):
 
     def _compute_slit_resolving_power(self):
         try:
+            seeing = float(self.seeing_var.get())
+            if self.seeing_scaling_var.get() == "1":
+                # With seeing scaling enabled the entered value is the zenith
+                # V seeing; the helper evaluates the Kolmogorov-scaled seeing
+                # at the S/N reference wavelength (zenith).
+                seeing = float(effective_seeing_arcsec(
+                    seeing, float(self.reference_wavelength_var.get()), 1.0))
             result = slit_spectrograph_resolving_power(
                 float(self.reference_wavelength_var.get()),
                 float(self.spec_grating_lines_var.get()),
@@ -876,7 +1059,7 @@ class ETCGUI(tk.Tk):
                 float(self.spec_camera_var.get()),
                 float(self.focal_var.get()),
                 float(self.slit_var.get()),
-                float(self.seeing_var.get()))
+                seeing)
         except (ValueError, KeyError) as exc:
             self.spec_geometry_status_var.set(f"Cannot compute R: {exc}")
             return
@@ -1249,8 +1432,17 @@ class ETCGUI(tk.Tk):
             self.template_display_var.set("The selected template has no positive flux samples.")
             return
         wave, flux = wave[valid], flux[valid]
+        # The preview x-axis is always the 3000-9000 A optical window, so the
+        # visible portion of every template is directly comparable regardless
+        # of the template's own coverage.
+        xmin, xmax = 3000.0, 9000.0
+        window = (wave >= xmin) & (wave <= xmax)
+        if window.sum() < 2:
+            self.template_display_var.set(
+                "The selected template has no positive flux in 3000-9000 Å.")
+            return
+        wave, flux = wave[window], flux[window]
         log_flux = np.log10(flux)
-        xmin, xmax = float(wave.min()), float(wave.max())
         ymin, ymax = float(log_flux.min()), float(log_flux.max())
         if xmax <= xmin:
             xmax = xmin + 1.0
@@ -1272,7 +1464,7 @@ class ETCGUI(tk.Tk):
             tick_height = 5 if round(fraction * 25) % 5 == 0 else 3
             canvas.create_line(x_tick, bottom, x_tick, bottom + tick_height, fill="#666666")
         self.template_display_var.set(
-            f"Template Fλ distribution: {xmin:.0f}–{xmax:.0f} Å; log flux span {ymin:.2f} to {ymax:.2f}.")
+            f"Template Fλ distribution over 3000–9000 Å; log flux span {ymin:.2f} to {ymax:.2f}.")
         canvas.create_text(left, height - 10, text=f"{xmin:.0f}", anchor="w", fill="#555555", font=("TkDefaultFont", 8))
         canvas.create_text(right, height - 10, text=f"{xmax:.0f} Å", anchor="e", fill="#555555", font=("TkDefaultFont", 8))
         canvas.create_text(3, top, text="log Fλ", anchor="nw", fill="#555555", font=("TkDefaultFont", 8))
@@ -1535,7 +1727,15 @@ class ETCGUI(tk.Tk):
                 "transmission_curve": transmission_curve,
                 "psf_model": self.psf_model_var.get(),
                 "moffat_beta": float(self.moffat_beta_var.get()),
-                "elevation_m": float(self.elev_var.get())}
+                "elevation_m": float(self.elev_var.get()),
+                "seeing_wavelength_scaling": self.seeing_scaling_var.get() == "1",
+                "guiding_rms_arcsec": float(self.guiding_rms_var.get() or 0.0),
+                "include_telluric_bands": self.telluric_var.get() == "1"}
+
+    def _source_transform_kwargs(self):
+        """Radial-velocity and reddening transformation of the template."""
+        return {"radial_velocity_kms": float(self.radial_velocity_var.get() or 0.0),
+                "ebv": float(self.ebv_var.get() or 0.0)}
 
     def _source_geometry_kwargs(self):
         geometry = self.source_geometry_var.get().strip().lower()
@@ -1545,6 +1745,15 @@ class ETCGUI(tk.Tk):
     def _sky_models_for_track(self, track, vega_profile, ra_deg, dec_deg):
         """Build observed ground-sky inputs for every planning time sample."""
         aperture = float(self.aperture_var.get())
+        extra_bg = float(self.extra_background_var.get() or 0.0)
+        sky_annulus = float(self.sky_annulus_var.get() or 0.0)
+        models = self._sky_models_core(track, vega_profile, ra_deg, dec_deg, aperture)
+        for model in models:
+            model["extra_background_e_s_pixel"] = extra_bg
+            model["sky_annulus_pixels"] = sky_annulus
+        return models
+
+    def _sky_models_core(self, track, vega_profile, ra_deg, dec_deg, aperture):
         if self.sky_model_var.get() == "fixed_ab":
             fixed = {"sky_mag": float(self.sky_var.get()), "sky_zero_point_jy": 3631.0,
                      "sky_at_telescope": True, "aperture_radius_arcsec": aperture}
@@ -1568,14 +1777,22 @@ class ETCGUI(tk.Tk):
             sqm_v = float(self.sqm_var.get())
             v_table = float(np.interp(5510.0, SKY_WAVELENGTH_AA, SKY_MAG_VEGA))
             pivot_colour = float(np.interp(pivot, SKY_WAVELENGTH_AA, SKY_MAG_VEGA)) - v_table
-        for utc, alt, airmass, sun_alt, moon_alt, moon_sep, phase in zip(
-                track["utc_datetime"], track["alt_target"], track["airmass_target"], track["alt_sun"],
-                track["alt_moon"], track["moon_sep_deg"], track["phase_moon"]):
+        sun_geometric = track.get("alt_sun_geometric", track["alt_sun"])
+        elongations = track.get("sun_sep_deg", np.full(len(track["jd"]), 180.0))
+        moon_distances = track.get("moon_distance_km", np.full(len(track["jd"]), 384400.0))
+        for utc, alt, airmass, sun_alt, moon_alt, moon_sep, phase, sun_sep, moon_km in zip(
+                track["utc_datetime"], track["alt_target"], track["airmass_target"], sun_geometric,
+                track["alt_moon"], track["moon_sep_deg"], track["phase_moon"],
+                elongations, moon_distances):
             if sqm_mode:
                 base_mag = sqm_v + pivot_colour
             else:
+                # Twilight/day thresholds use the geometric Sun altitude (the
+                # standard convention); the zodiacal light uses the target's
+                # solar elongation.
                 base_mag = sky_magnitude_vega(pivot, utc, alt, airmass, sun_alt,
-                                              ecliptic_lat_deg=ecliptic_lat, galactic_lat_deg=galactic_lat)
+                                              ecliptic_lat_deg=ecliptic_lat, galactic_lat_deg=galactic_lat,
+                                              solar_elongation_deg=float(sun_sep))
             # Krisciunas--Schaefer moonlight terms are evaluated in the nine
             # supplied broad bands, then used as a spectral colour model.  The
             # ING dark/twilight/day brightness remains the normalization.
@@ -1585,7 +1802,9 @@ class ETCGUI(tk.Tk):
                           airmass_target=max(float(airmass) if np.isfinite(airmass) else 1.0, 1.0),
                           airmass_moon=moon_airmass, lunar_phase_deg=max(0.0, 180.0 - float(phase)),
                           moon_separation_deg=float(moon_sep), moon_zenith_dist_deg=90.0 - float(moon_alt),
-                          target_zenith_dist_deg=90.0 - float(np.clip(alt, 0.0, 90.0)))
+                          target_zenith_dist_deg=90.0 - float(np.clip(alt, 0.0, 90.0)),
+                          solar_elongation_deg=float(sun_sep),
+                          moon_distance_km=float(moon_km))
             dark = sky_brightness_total(**common, include_moon=False, include_sun_twilight=False)
             total = sky_brightness_total(**common, include_moon=moon_alt >= 0.0, include_sun_twilight=False)
             pivot_dark = float(np.interp(pivot, colour_wave, dark))
@@ -1614,6 +1833,7 @@ class ETCGUI(tk.Tk):
         results = {}
         label = "Required exposure [s]" if target_snr is not None else "S/N"
         geometry_kwargs = self._source_geometry_kwargs()
+        transform_kwargs = self._source_transform_kwargs()
         for i, airmass in enumerate(track["airmass_target"]):
             if not np.isfinite(airmass):
                 continue
@@ -1624,11 +1844,16 @@ class ETCGUI(tk.Tk):
                     self.star_spec, observing_band, self.qe_curve, target_mag, 1.0,
                     reference_zero_point_jy, reference_band, template_mv0, visual_band, visual_zero_point_jy,
                     observing_zero_point_jy, reference_detector_type, visual_detector_type, observing_detector_type,
-                    **geometry_kwargs)
+                    **geometry_kwargs, **transform_kwargs)
                 scint_rate = scintillation_variance_rate_e2_s(
                     probe["source_rate_per_s"], float(self.diam_var.get()), airmass, float(self.elev_var.get()))
-                real_texp = exposure_time_for_snr(target_snr, probe["source_rate_per_s"], probe["sky_rate_per_s"],
-                                                   detector.dark_current_e_s_pix * probe["n_pixels"], detector.read_noise_e,
+                # The sky-subtraction factor inflates the background terms in
+                # the closed-form solver exactly as it does in the S/N.
+                sub_factor = probe.get("sky_subtraction_factor", 1.0)
+                real_texp = exposure_time_for_snr(target_snr, probe["source_rate_per_s"],
+                                                   sub_factor * probe["sky_rate_per_s"],
+                                                   sub_factor * detector.dark_current_e_s_pix * probe["n_pixels"],
+                                                   detector.read_noise_e * np.sqrt(sub_factor),
                                                    probe["n_pixels"], extra_variance_rate_e2_s=scint_rate)
                 values[i] = real_texp
             else:
@@ -1637,7 +1862,7 @@ class ETCGUI(tk.Tk):
                 self.star_spec, observing_band, self.qe_curve, target_mag, real_texp,
                 reference_zero_point_jy, reference_band, template_mv0, visual_band, visual_zero_point_jy,
                 observing_zero_point_jy, reference_detector_type, visual_detector_type, observing_detector_type,
-                **geometry_kwargs)
+                **geometry_kwargs, **transform_kwargs)
             results[i] = result
             if target_snr is None:
                 values[i] = result["snr"]
@@ -1657,6 +1882,12 @@ class ETCGUI(tk.Tk):
         slider_indices = self._slider_indices(valid_indices, selected_idx, maximum=12 if resolution >= 50000 else 25)
         label = "Required exposure [s]" if target_snr is not None else f"S/N at {reference:.0f} Å"
         grating_lines = float(self.grating_lines_var.get() or 0.0)
+        transform_kwargs = self._source_transform_kwargs()
+        if self.clamp_r_var.get() == "1" and self.spectroscopy_mode_var.get() == "slit":
+            transform_kwargs["slit_geometry"] = {
+                "grating_lines_mm": float(self.spec_grating_lines_var.get()),
+                "collimator_fl_mm": float(self.spec_collimator_var.get()),
+                "camera_fl_mm": float(self.spec_camera_var.get())}
         for i in valid_indices:
             atmosphere = self._atmosphere_dict(track["airmass_target"][i], atmo)
             calculator = SpectroscopyETC(telescope, detector, atmosphere, sky_models[i])
@@ -1673,20 +1904,22 @@ class ETCGUI(tk.Tk):
                     self.slit_orientation_var.get().strip().lower() == "parallactic",
                     True)
             if target_snr is not None:
-                probe = calculator.compute_spectroscopy(*args)
+                probe = calculator.compute_spectroscopy(*args, **transform_kwargs)
                 ref_index = int(np.argmin(np.abs(probe["wavelength_aa"].to_numpy() - reference)))
                 scint_rate = scintillation_variance_rate_e2_s(
                     probe.iloc[ref_index]["photons_source_es"], float(self.diam_var.get()),
                     track["airmass_target"][i], float(self.elev_var.get()))
+                sub_factor = float(probe.attrs.get("sky_subtraction_factor", 1.0))
                 real_texp = exposure_time_for_snr(target_snr, probe.iloc[ref_index]["photons_source_es"],
-                                                   probe.iloc[ref_index]["photons_sky_es"],
-                                                   detector.dark_current_e_s_pix * probe.attrs["n_pixels_per_resel"],
-                                                   detector.read_noise_e, probe.attrs["n_pixels_per_resel"],
+                                                   sub_factor * probe.iloc[ref_index]["photons_sky_es"],
+                                                   sub_factor * detector.dark_current_e_s_pix * probe.attrs["n_pixels_per_resel"],
+                                                   detector.read_noise_e * np.sqrt(sub_factor),
+                                                   probe.attrs["n_pixels_per_resel"],
                                                    extra_variance_rate_e2_s=scint_rate)
                 values[i] = real_texp
             else:
                 real_texp = texp
-            reference_spectrum = calculator.compute_spectroscopy(*args[:3], real_texp, *args[4:])
+            reference_spectrum = calculator.compute_spectroscopy(*args[:3], real_texp, *args[4:], **transform_kwargs)
             ref_index = int(np.argmin(np.abs(reference_spectrum["wavelength_aa"].to_numpy() - reference)))
             if target_snr is None:
                 values[i] = reference_spectrum.iloc[ref_index]["snr"]
@@ -1696,7 +1929,8 @@ class ETCGUI(tk.Tk):
             if i in slider_indices:
                 full_args = list(args)
                 full_args[4] = (float(self.wlmin_var.get()), float(self.wlmax_var.get()))
-                spectra[i] = calculator.compute_spectroscopy(*full_args[:3], real_texp, *full_args[4:])
+                spectra[i] = calculator.compute_spectroscopy(*full_args[:3], real_texp, *full_args[4:],
+                                                             **transform_kwargs)
         return values, spectra, slider_indices, label, saturation, peak_e, max_unsaturated_exptime
 
     def _build_time_series_dataframe(self, track, snr_values, exposure_values, target_mag, band, atmo,
@@ -1793,7 +2027,8 @@ class ETCGUI(tk.Tk):
             observing_band = observing_profile.transmission
             atmo = self.earth_atmosphere_curve if self.earth_atmosphere_curve is not None else fcat.generic_zenith_atmosphere_curve()
             detector = Detector(float(self.pixel_var.get()), float(self.gain_var.get()), float(self.fullwell_var.get()),
-                                int(self.bitdepth_var.get()), float(self.readnoise_var.get()), float(self.dark_var.get()))
+                                int(self.bitdepth_var.get()), float(self.readnoise_var.get()), float(self.dark_var.get()),
+                                sensor_type=self.sensor_type_var.get(), osc_channel=self.osc_channel_var.get())
             telescope = {"diameter_mm": float(self.diam_var.get()), "obstruction_mm": float(self.obstruct_var.get()),
                          "efficiency": float(self.eff_var.get()), "focal_length_mm": float(self.focal_var.get()),
                          "throughput_curve": self.throughput_curve,
@@ -1825,6 +2060,22 @@ class ETCGUI(tk.Tk):
                     visual_detector_type=visual_profile.detector_type,
                     observing_detector_type=observing_profile.detector_type)
                 self._update_differential_precision(selected_calculator, result, exposure_used, run_kwargs)
+                scint_fraction = (result["scintillation_noise_e"]
+                                  / max(result["photons_source_es"] * exposure_used, 1e-300))
+                self._append_info_outputs([
+                    f"mode / exposure   : photometry ({result['source_geometry']}) / {exposure_used:.1f} s",
+                    f"S/N               : {result['snr']:.1f}",
+                    f"aperture          : {result['n_pixels']:.0f} px",
+                    f"scintillation     : {result['scintillation_noise_e']:.1f} e-  "
+                    f"({100.0 * scint_fraction:.2f}% of source)",
+                    f"ADC quantization  : {result['digitization_noise_e']:.1f} e-",
+                    f"peak pixel        : {result['peak_e_unclipped']:.0f} e- / "
+                    f"{result['peak_adu_unclipped']:.0f} ADU  sat={result['saturation_flag']}  "
+                    f"max single frame {result['max_unsaturated_exptime_s']:.1f} s",
+                    f"magnitudes        : standard {result['estimated_observing_magnitude']:.3f}, "
+                    f"instrumental {result['instrumental_response_magnitude']:.3f} ({self.band_var.get()})",
+                    f"sky used          : {result['sky_mag_arcsec2']:.2f} mag/arcsec2"]
+                    + self._template_colour_lines())
                 frame = pd.DataFrame([result]); self._display_table(frame, "mag"); self.result_df = frame
                 plot_args = ("photometry", track, values, label, idx, self.band_var.get())
                 snr_values = values if target_snr is None else np.where(np.isfinite(values), target_snr, np.nan)
@@ -1856,11 +2107,27 @@ class ETCGUI(tk.Tk):
                                         float(ref_row["photons_sky_es"]),
                                         detector.dark_current_e_s_pix * resel_pixels, resel_pixels,
                                         float(ref_row["max_unsaturated_exptime_s"]), detector,
-                                        what=f"resel at {reference_wl:.0f} Å",
+                                        what=f"res.el at {reference_wl:.0f} Å",
                                         airmass=track["airmass_target"][idx])
                 self.differential_var.set(
                     f"σ(EW) at {reference_wl:.0f} Å: {float(ref_row['sigma_ew_mangstrom']):.1f} mÅ "
                     "(Cayrel) for the selected exposure.")
+                dispersion_line = (f"dispersion        : {spectrum.attrs['dispersion_aa_pix']:.2f} A/pix, "
+                                   f"grating efficiency {spectrum.attrs['grating_efficiency']:.2f}"
+                                   if "dispersion_aa_pix" in spectrum.attrs else "")
+                self._append_info_outputs([
+                    f"mode              : spectroscopy ({spectrum.attrs['spectroscopy_mode']}), "
+                    f"median R = {spectrum.attrs['effective_resolution_R']:.0f}",
+                    f"at {reference_wl:.0f} A       : S/N {float(ref_row['snr']):.1f} /res.el, "
+                    f"sigma(EW) {float(ref_row['sigma_ew_mangstrom']):.1f} mA (Cayrel)",
+                    dispersion_line,
+                    f"res.el            : {spectrum.attrs['n_pixels_per_resel']:.0f} px; median scintillation "
+                    f"{spectrum.attrs['scintillation_noise_e_median']:.1f} e-, ADC "
+                    f"{spectrum.attrs['digitization_noise_e']:.1f} e-",
+                    f"saturation at ref : {ref_row['saturation_flag']}, max single frame "
+                    f"{float(ref_row['max_unsaturated_exptime_s']):.1f} s",
+                    f"sky used          : {spectrum.attrs['sky_mag_arcsec2']:.2f} mag/arcsec2"]
+                    + self._template_colour_lines() + self._rv_dispersion_lines())
                 self._display_table(spectrum, "wavelength_aa"); self.result_df = spectrum
                 plot_args = ("spectroscopy", track, spectra, values, label, idx, slider_indices)
                 snr_values = values if target_snr is None else np.where(np.isfinite(values), target_snr, np.nan)
@@ -1873,10 +2140,11 @@ class ETCGUI(tk.Tk):
                     max_unsaturated_exptime_values=max_unsaturated,
                     reference_wavelength_aa=float(self.reference_wavelength_var.get()))
                 selected_saturation = saturation[idx]
+            horizon = self._current_horizon()
             if plot_args[0] == "photometry":
-                self.plot_window = show_photometry_plot(self, *plot_args[1:])
+                self.plot_window = show_photometry_plot(self, *plot_args[1:], horizon=horizon)
             else:
-                self.plot_window = show_spectroscopy_plot(self, *plot_args[1:])
+                self.plot_window = show_spectroscopy_plot(self, *plot_args[1:], horizon=horizon)
             self._show_results_window()
             if target_snr is not None and selected_saturation != "NONE":
                 self.status_var.set("Complete - target S/N exposure saturates; see max safe exposure in Results / CSV.")
@@ -1912,14 +2180,9 @@ class ETCGUI(tk.Tk):
         info_frame = ttk.Frame(tabs)
         tabs.add(result_frame, text="Selected-time result")
         tabs.add(time_frame, text="Time series")
-        #tabs.add(info_frame, text="Assumptions / visibility")
-        #tabs.hide(info_frame)
+        tabs.add(info_frame, text="Assumptions / outputs")
 
-        columns = ("X", "Source e-/s", "Sky e-/s", "S/N", "Peak ADU", "Sat")
-        self.tree = ttk.Treeview(result_frame, columns=columns, show="headings")
-        for column, width in zip(columns, [130, 150, 150, 120, 120, 70]):
-            self.tree.heading(column, text=column)
-            self.tree.column(column, width=width, anchor="e")
+        self.tree = ttk.Treeview(result_frame, show="headings")
         result_scroll_y = ttk.Scrollbar(result_frame, orient="vertical", command=self.tree.yview)
         result_scroll_x = ttk.Scrollbar(result_frame, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=result_scroll_y.set, xscrollcommand=result_scroll_x.set)
@@ -1975,63 +2238,182 @@ class ETCGUI(tk.Tk):
         self._ensure_results_window()
         local = track["local_datetime"][idx]
         parallactic = float(track["parallactic_deg"][idx])
-        sky_line = ("" if sky_mag_arcsec2 is None
-                    else f"Sky surface brightness at selected time: {sky_mag_arcsec2:.2f} mag/arcsec2 (observing band)\n")
-        text = f"""PHYSICAL ASSUMPTIONS
---------------------
-Target: {target_label}; ICRS RA {ra:.6f} deg, Dec {dec:.6f} deg
-Selected UTC: {utc:%Y-%m-%d %H:%M}; local display: {local:%Y-%m-%d %H:%M} ({self._local_timezone_label()})
-Altitude: {altitude:.2f} deg; airmass: {airmass:.3f} (Pickering 2002 on the
-refraction-corrected apparent altitude; not defined below 5 deg)
-Parallactic angle: {parallactic:+.2f} deg (N through E; slit at this angle avoids
-atmospheric-dispersion slit losses)
-{sky_line}Azimuth convention: N=0, E=90, S=180, W=270 deg
+        sky_source = {"ing": "ING dark table + van Rhijn airglow + zodiacal(|beta|) + starlight(|b|) "
+                             "+ K&S Moon + twilight/Weaver",
+                      "fixed_ab": f"fixed AB {self.sky_var.get()} mag/arcsec2 (observed)",
+                      "sqm": f"SQM {self.sqm_var.get()} V mag/arcsec2 zenith + band colours + K&S Moon",
+                      }.get(self.sky_model_var.get(), self.sky_model_var.get())
+        detector_source = (f"gain table setting {self.gain_setting_var.get()}" if self.gain_table_rows
+                           else "manual entry")
+        lines = [
+            "RUN PARAMETERS",
+            "--------------",
+            f"target            : {target_label}  ICRS {ra:.6f} {dec:+.6f} deg",
+            f"time              : {utc:%Y-%m-%d %H:%M} UTC  |  {local:%Y-%m-%d %H:%M} {self._local_timezone_label()}",
+            f"altitude/airmass  : {altitude:.2f} deg / {airmass:.3f}  (Pickering 2002, refracted; none below 5 deg)",
+            f"parallactic angle : {parallactic:+.2f} deg at this time (N through E; "
+            f"varies across the night — see the CSV time series)",
+        ]
+        if sky_mag_arcsec2 is not None:
+            lines.append(f"sky brightness    : {sky_mag_arcsec2:.2f} mag/arcsec2 (observing band, selected time)")
+        lines += [
+            f"sky model         : {self.sky_model_var.get()} = {sky_source}",
+            f"reference mag     : {self.mag_var.get()} {self.mag_system_var.get()} in {self.reference_band_var.get()}",
+            f"observing filter  : {self.band_var.get()}",
+            f"template          : {self.selected_star.name.strip()}  mv0={self.selected_star.mv0:.3f}  "
+            f"(visual-zero convention, then rescaled to the reference magnitude)",
+            f"PSF               : {self.psf_model_var.get()}"
+            + (f" beta={self.moffat_beta_var.get()}" if self.psf_model_var.get() == "moffat" else ""),
+            f"detector          : {detector_source}; gain {self.gain_var.get()} e-/ADU, "
+            f"RN {self.readnoise_var.get()} e-, FWC {self.fullwell_var.get()} e-, "
+            f"{self.sensor_type_var.get()}"
+            + (f" channel {self.osc_channel_var.get()}" if self.sensor_type_var.get() == "osc" else ""),
+            "noise terms       : photon, sky, dark, read, scintillation (Young), ADC quantization (g/sqrt(12))"
+            + (f", sky-subtraction (n_sky={self.sky_annulus_var.get()} px)"
+               if float(self.sky_annulus_var.get() or 0.0) > 0 else ""),
+            "extinction        : zenith curve ^ airmass on source; sky used as observed (not re-extinguished)"
+            + ("; telluric O2/H2O bands included" if self.telluric_var.get() == "1" else ""),
+            "sky physics       : zodiacal(|beta|, elongation), airglow van Rhijn x slant extinction, "
+            "K&S Moon x (d_mean/d)^2; twilight on geometric Sun altitude",
+            "saturation        : peak pixel from unextracted PSF/LSF; flags FULL_WELL / ADC / BOTH",
+        ]
+        rv = float(self.radial_velocity_var.get() or 0.0)
+        ebv = float(self.ebv_var.get() or 0.0)
+        if rv != 0.0 or ebv != 0.0:
+            lines.append(f"template transform: RV {rv:+.1f} km/s, E(B-V) {ebv:.3f} (CCM89, R_V=3.1), "
+                         "applied before calibration")
+        if float(self.guiding_rms_var.get() or 0.0) > 0:
+            lines.append(f"guiding blur      : rms {self.guiding_rms_var.get()} arcsec added "
+                         "in quadrature to the seeing FWHM")
+        if self.mode_var.get() == "spectroscopy":
+            lines += [
+                f"slit orientation  : {self.slit_orientation_var.get()}"
+                + ("" if self.slit_orientation_var.get() == "parallactic"
+                   else " (per-wavelength Filippenko dispersion offset applied)"),
+                f"spectrograph      : {self.spec_geometry_status_var.get()}",
+            ]
+            if self.spectroscopy_mode_var.get() == "slitless":
+                lines.append("slitless          : full-band sky per pixel (uniform source stays uniform "
+                             "under dispersion); pending validation on a calibrated instrument")
+        self.info_text.delete("1.0", tk.END)
+        self.info_text.insert("1.0", "\n".join(lines) + "\n")
 
-Target reference magnitude: {self.mag_var.get()} {self.mag_system_var.get()} in {self.reference_band_var.get()}.
-Observing filter: {self.band_var.get()} (used in photometry and spectroscopy). The template file
-is a calibrated F_lambda distribution represented at visual mv0={self.selected_star.mv0:.3f};
-it is first converted to visual zero as in interpola_spad, then scaled to the
-target reference measurement. The observing response is applied afterwards.
-Sky model: {self.sky_model_var.get()}. ING mode combines the dark-sky table
-with van Rhijn airglow (solar-cycle scaled), zodiacal light at the field's
-ecliptic latitude, integrated starlight at its galactic latitude, the
-Krisciunas & Schaefer (1991) Moon model, twilight blending and the Weaver
-daylight table; fixed_ab uses the manually entered observed ground sky.
-PSF model: {self.psf_model_var.get()} (Moffat beta {self.moffat_beta_var.get()} where selected).
+    SPEED_OF_LIGHT_KMS = 299792.458
 
-Detected counts include collecting area pi/4(D²-d²), scalar and optional
-wavelength-dependent optics throughput, QE, and the loaded Earth-atmosphere
-transmission curve (or the broad-band fallback) raised to the current airmass,
-source aperture or slit losses, sky, dark current and read noise, plus
-Young-law scintillation and ADC quantization (gain/sqrt(12)) noise terms.
-'fixed' slit orientation additionally applies the per-wavelength Filippenko
-(1982) atmospheric-dispersion slit loss. Sky is
-already an observed ground brightness and is therefore not extinguished a
-second time. Spectroscopic values are per resolution element. The native
-Matplotlib spectrum slider is manual and has no autoplay.
+    def _template_colour_lines(self):
+        """(B-V)0 of the unreddened template and (B-V) after E(B-V).
 
-SATURATION / TARGET-S/N POLICY
-------------------------------
-Peak-pixel electrons use the untruncated Gaussian PSF (and the spectral LSF
-for spectra), while S/N uses the selected photometric aperture or extraction.
-The saturation flag distinguishes detector full well from ADC clipping. CSV
-output reports the maximum unsaturated single-frame exposure at each time;
-split a longer required exposure into shorter frames and include one read-noise
-term for each frame when planning a stack.
-{('Slitless mode is EXPERIMENTAL: its dispersion/LSF geometry is internally consistent, but must be validated against a calibrated instrument.' if self.mode_var.get() == 'spectroscopy' and self.spectroscopy_mode_var.get() == 'slitless' else '')}
-"""
-        self.info_text.delete("1.0", tk.END); self.info_text.insert("1.0", text)
+        The synthetic colours are computed from the *full* template spectrum
+        through the Bessell B and V passbands.  By construction the reddened
+        minus unreddened difference recovers the entered E(B-V), which is a
+        useful consistency check shown alongside.
+        """
+        if self.star_spec is None or self.filter_resp_data is None:
+            return []
+        try:
+            b_profile = fcat.load_filter_profile(self.filter_resp_data, "Bessell.B", "Vega")
+            v_profile = fcat.load_filter_profile(self.filter_resp_data, "Bessell.V", "Vega")
+        except (KeyError, FileNotFoundError, ValueError):
+            return []
+        ebv = float(self.ebv_var.get() or 0.0)
+
+        def colour(template):
+            try:
+                m_b = synthetic_magnitude(template, b_profile.transmission,
+                                          b_profile.zero_point_jy, b_profile.detector_type)
+                m_v = synthetic_magnitude(template, v_profile.transmission,
+                                          v_profile.zero_point_jy, v_profile.detector_type)
+            except ValueError:
+                return None
+            return m_b - m_v
+
+        bv0 = colour(self.star_spec)
+        if bv0 is None:
+            return []
+        line = f"template colour   : (B-V)0 = {bv0:+.3f} (unreddened, full template, Bessell B/V)"
+        if ebv != 0.0:
+            reddened = transformed_template(self.star_spec, ebv=ebv)
+            bv = colour(reddened)
+            if bv is not None:
+                line += (f"; (B-V) = {bv:+.3f} reddened by E(B-V)={ebv:.3f} "
+                         f"(Δ = {bv - bv0:+.3f})")
+        return [line]
+
+    def _rv_dispersion_lines(self):
+        """RV shift in pixels and the km/s-per-pixel scale at 4000-7000 Å.
+
+        The RV displaces the spectrum by Δλ = λ v/c; expressed in detector
+        pixels this is (λ v/c) / (Å per pixel).  The velocity sampling is the
+        inverse, c·(Å per pixel)/λ [km/s per pixel].  The dispersion is the
+        slitless Å/pixel, or in slit mode (λ/R)/(pixels per element).
+        """
+        rv = float(self.radial_velocity_var.get() or 0.0)
+        wavelengths = np.array([4000.0, 5000.0, 6000.0, 7000.0])
+        mode = self.spectroscopy_mode_var.get()
+        try:
+            if mode == "slitless":
+                grating_lines = float(self.grating_lines_var.get() or 0.0)
+                if grating_lines > 0:
+                    aa_per_pix = np.full(wavelengths.size, grating_dispersion_aa_per_pixel(
+                        grating_lines, float(self.grating_distance_var.get()),
+                        float(self.pixel_var.get())))
+                else:
+                    aa_per_pix = np.full(wavelengths.size, float(self.slitless_dispersion_var.get()))
+            else:
+                resolution = float(self.resolution_var.get())
+                sampling = float(self.sampling_var.get())
+                aa_per_pix = (wavelengths / resolution) / max(sampling, 1e-9)
+        except (ValueError, ZeroDivisionError):
+            return []
+        kms_per_pix = self.SPEED_OF_LIGHT_KMS * aa_per_pix / wavelengths
+        shift_pix = (wavelengths * rv / self.SPEED_OF_LIGHT_KMS) / aa_per_pix
+        vel = "  ".join(f"{w:.0f}Å:{k:.1f}" for w, k in zip(wavelengths, kms_per_pix))
+        lines = [f"RV sampling       : {vel}  (km/s per pixel)"]
+        if rv != 0.0:
+            disp = "  ".join(f"{w:.0f}Å:{s:+.2f}" for w, s in zip(wavelengths, shift_pix))
+            lines.append(f"RV shift          : {disp}  (pixels for RV {rv:+.1f} km/s)")
+        return lines
+
+    def _append_info_outputs(self, lines):
+        """Append the selected-time output block to the parameters tab."""
+        block = ["", "RUN OUTPUTS", "-----------"]
+        block += [line for line in lines if line]
+        for extra in (self.stack_plan_var.get(), self.differential_var.get()):
+            if extra and not extra.startswith("Stack plan appears"):
+                block.append(extra)
+        self.info_text.insert(tk.END, "\n".join(block) + "\n")
+
+    # Column key -> visible heading; only keys present in the result frame are
+    # shown, so photometric and spectroscopic runs each display every quantity
+    # the engine produced (the CSV export always carries the full table).
+    _RESULT_COLUMNS = (
+        ("mag", "Magnitude"), ("wavelength_aa", "Wavelength [Å]"),
+        ("resolution_element_aa", "Resel [Å]"), ("effective_resolution_R", "R"),
+        ("photons_source_es", "Source e-/s"), ("photons_sky_es", "Sky e-/s"),
+        ("snr", "S/N"), ("sigma_ew_mangstrom", "σ(EW) [mÅ]"),
+        ("scintillation_noise_e", "Scint [e-]"), ("digitization_noise_e", "ADC noise [e-]"),
+        ("n_pixels", "N pix"), ("peak_e_unclipped", "Peak [e-]"), ("adu", "Peak ADU"),
+        ("saturation_flag", "Sat"), ("max_unsaturated_exptime_s", "Max t [s]"),
+        ("estimated_observing_magnitude", "Std obs mag"),
+        ("instrumental_response_magnitude", "Instr mag"), ("sky_mag_arcsec2", "Sky mag/\"²"),
+        ("sky_subtraction_factor", "Sky-sub ×"),
+    )
 
     def _display_table(self, frame, xcol):
         self._ensure_results_window()
+        available = [(key, heading) for key, heading in self._RESULT_COLUMNS if key in frame.columns]
+        columns = tuple(key for key, _ in available)
+        self.tree.configure(columns=columns)
+        for key, heading in available:
+            if key == "mag":
+                heading = f"Magnitude [{self.mag_system_var.get()}]"
+            self.tree.heading(key, text=heading)
+            self.tree.column(key, width=118 if key in (xcol, "saturation_flag") else 105,
+                             minwidth=70, anchor="e")
         self.tree.delete(*self.tree.get_children())
-        self.tree.heading("X", text=f"Magnitude [{self.mag_system_var.get()}]" if xcol == "mag" else "Wavelength [Å]")
         for _, row in frame.iterrows():
-            x_value = f"{row[xcol]:.3f}" if xcol == "mag" else f"{row[xcol]:.2f}"
-            saturation = row.get("saturation_flag", "SATURATED" if row["saturated"] else "")
-            self.tree.insert("", "end", values=(x_value, f"{row['photons_source_es']:.3e}",
-                                                   f"{row['photons_sky_es']:.3e}", f"{row['snr']:.3f}",
-                                                   str(row["adu"]), saturation if row["saturated"] else ""))
+            self.tree.insert("", "end",
+                             values=[self._format_table_value(row[key]) for key in columns])
 
     def _open_plot(self):
         if self.plot_window is None or not self.plot_window.winfo_exists():

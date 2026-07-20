@@ -11,10 +11,11 @@ Noise includes photon, dark, read, scintillation and ADC quantization terms.
 import numpy as np
 import astropy.units as u
 
-from etc_physics import (as_angstrom_curve, calibrated_template_magnitude, electron_rate,
-                         magnitude_f_lambda, psf_encircled_energy, psf_slit_throughput,
-                         snr, synthetic_magnitude)
-from observing_conditions import digitization_noise_e, scintillation_variance_e2
+from etc_physics import (as_angstrom_curve, background_noise_factor, calibrated_template_magnitude,
+                         electron_rate, magnitude_f_lambda, psf_encircled_energy,
+                         psf_slit_throughput, snr, synthetic_magnitude, transformed_template,
+                         FWHM_TO_SIGMA)
+from observing_conditions import digitization_noise_e, effective_seeing_arcsec, scintillation_variance_e2
 from spectral_utils import require_coverage, interpolate_checked, interpolate_zero_filled
 
 
@@ -32,30 +33,44 @@ class PhotometryETC:
                                   observing_zero_point_jy=3631.0,
                                   reference_detector_type=1, visual_detector_type=1,
                                   observing_detector_type=1,
-                                  source_geometry="point", source_area_arcsec2=None):
+                                  source_geometry="point", source_area_arcsec2=None,
+                                  radial_velocity_kms=0.0, ebv=0.0):
         if t_exp_s <= 0:
             raise ValueError("Exposure time must be positive.")
         geometry = str(source_geometry).strip().lower()
         if geometry not in {"point", "extended"}:
             raise ValueError("Source geometry must be 'point' or 'extended'.")
-        wave, transmission = as_angstrom_curve(observing_filter, "photometric observing filter")
-        transmission = np.clip(transmission, 0.0, 1.0)
-        active = transmission > 0.0
+        filter_wave, filter_transmission = as_angstrom_curve(observing_filter,
+                                                             "photometric observing filter")
+        filter_transmission = np.clip(filter_transmission, 0.0, 1.0)
+        active = filter_transmission > 0.0
         if active.sum() < 2:
             raise ValueError("Photometric observing filter has no positive transmission samples.")
-        wave, transmission = wave[active], transmission[active]
-        qe = interpolate_zero_filled(wave.to_value(u.AA), qe_curve, "QE curve", clip=(0.0, 1.0))
+        support_lo = float(filter_wave[active].min().to_value(u.AA))
+        support_hi = float(filter_wave[active].max().to_value(u.AA))
 
         reference_filter = observing_filter if reference_filter is None else reference_filter
+        # Optional radial-velocity shift and CCM89 reddening: applied to the
+        # template before calibration, so the entered (observed) magnitude
+        # keeps its meaning and only the template colours change.
+        star_spec = transformed_template(star_spec, radial_velocity_kms, ebv)
         spec_wave, spec_flam = calibrated_template_magnitude(
             star_spec, target_mag, reference_filter, target_zero_point_jy,
             template_mv0, visual_band, visual_zero_point_jy,
             reference_detector_type, visual_detector_type)
-        #require_coverage(wave.to_value(u.AA),
-        #                 np.column_stack((spec_wave.to_value(u.AA), spec_flam.to_value(spec_flam.unit))),
-        #                 "template spectrum")
+        # The band integral runs on the union of the filter grid, the
+        # template grid and a dense baseline — a coarse filter table no
+        # longer aliases narrow template features (trapezoidal integration
+        # is exact for the piecewise-linear inputs on their union grid).
+        template_aa = spec_wave.to_value(u.AA)
+        inside = (template_aa >= support_lo) & (template_aa <= support_hi)
+        wave = np.union1d(np.union1d(filter_wave.to_value(u.AA)[active], template_aa[inside]),
+                          np.linspace(support_lo, support_hi, 2048)) * u.AA
+        transmission = interpolate_zero_filled(wave.to_value(u.AA), observing_filter,
+                                               "photometric observing filter", clip=(0.0, 1.0))
+        qe = interpolate_zero_filled(wave.to_value(u.AA), qe_curve, "QE curve", clip=(0.0, 1.0))
         target_flam = interpolate_zero_filled(wave.to_value(u.AA),
-                                          np.column_stack((spec_wave.to_value(u.AA), spec_flam.to_value(spec_flam.unit))),
+                                          np.column_stack((template_aa, spec_flam.to_value(spec_flam.unit))),
                                           "template spectrum") * spec_flam.unit
         total_source_rate = electron_rate(wave, target_flam, transmission, qe, self.telescope, self.atmosphere)
         standard_observing_mag = synthetic_magnitude(
@@ -75,6 +90,19 @@ class PhotometryETC:
         )
     
         seeing = float(self.atmosphere["seeing_arcsec"])
+        # Guiding/image-motion blur: rms tracking error sigma_g adds a
+        # Gaussian of FWHM 2.355 sigma_g in quadrature to the seeing FWHM.
+        guiding_rms = float(self.atmosphere.get("guiding_rms_arcsec", 0.0))
+        if guiding_rms > 0.0:
+            seeing = float(np.hypot(seeing, FWHM_TO_SIGMA * guiding_rms))
+        # Optional Kolmogorov seeing scaling: the entered seeing is the zenith
+        # V value, and the broad-band effective seeing is evaluated at the
+        # transmission-weighted pivot wavelength of the observing filter at the
+        # current airmass (ETC-42 convention).  Disabled by default (flat).
+        if self.atmosphere.get("seeing_wavelength_scaling", False):
+            pivot_aa = float(np.average(wave.to_value(u.AA), weights=transmission))
+            seeing = float(effective_seeing_arcsec(seeing, pivot_aa,
+                                                   float(self.atmosphere.get("airmass", 1.0))))
         psf_model = str(self.atmosphere.get("psf_model", "gaussian"))
         moffat_beta = float(self.atmosphere.get("moffat_beta", 2.5))
         aperture_radius = float(self.sky_model.get("aperture_radius_arcsec", 1.0))
@@ -111,19 +139,39 @@ class PhotometryETC:
                           if self.sky_model.get("sky_at_telescope", False) else self.atmosphere)
         sky_rate = electron_rate(wave, sky_flam, transmission, qe, self.telescope, sky_atmosphere)
 
-        n_pixels = max(aperture_area / plate_scale**2, 1.0)
+        # One-shot-colour sensors: a single-channel extraction sees only the
+        # channel's share of the Bayer mosaic - aperture rates and the
+        # channel-pixel count scale by the fill fraction; the peak pixel does
+        # not (a centred channel pixel receives the full local flux).
+        fill = self.detector.channel_fill_fraction
+        source_rate = source_rate * fill
+        sky_rate = sky_rate * fill
+        n_pixels = max(aperture_area / plate_scale**2 * fill, 1.0)
         source_e = source_rate.to_value(1 / u.s) * t_exp_s
         sky_e = sky_rate.to_value(1 / u.s) * t_exp_s
         dark_e = self.detector.dark_current_e_s_pix * n_pixels * t_exp_s
+        # Generic extra background per pixel (detector glow, stray/scattered
+        # light, ghosting): a catch-all Poisson background term the physical
+        # model does not otherwise cover (cf. ETC-42 ExtraBackgroundNoise).
+        extra_bg_rate = float(self.sky_model.get("extra_background_e_s_pixel", 0.0))
+        extra_bg_e = extra_bg_rate * n_pixels * t_exp_s
         scintillation_var = scintillation_variance_e2(
             source_e, float(self.telescope["diameter_mm"]),
             float(self.atmosphere.get("airmass", 1.0)),
             float(self.atmosphere.get("elevation_m", 0.0)), t_exp_s)
         digitization_var = n_pixels * digitization_noise_e(self.detector.gain_e_adu)**2
+        # Sky subtraction from a finite annulus of n_sky pixels multiplies
+        # every per-pixel background variance by (1 + n_pix/n_sky)
+        # (Merline & Howell 1995); scintillation is source-borne and exempt.
+        sky_annulus_pixels = float(self.sky_model.get("sky_annulus_pixels", 0.0) or 0.0)
+        subtraction_factor = background_noise_factor(n_pixels, sky_annulus_pixels)
         result_snr = snr(source_e, sky_e, dark_e, self.detector.read_noise_e, n_pixels,
-                         extra_variance_e2=scintillation_var + digitization_var)
+                         extra_variance_e2=(scintillation_var
+                                            + subtraction_factor * (digitization_var + extra_bg_e)),
+                         sky_annulus_pixels=sky_annulus_pixels)
         peak_total = (peak_source_rate_es * t_exp_s + sky_e / n_pixels
-                      + self.detector.dark_current_e_s_pix * t_exp_s)
+                      + self.detector.dark_current_e_s_pix * t_exp_s
+                      + extra_bg_rate * t_exp_s)
         peak_rate_e_s = peak_total / t_exp_s
         saturation_limit_e = min(self.detector.full_well_e, self.detector.max_electrons)
         max_unsaturated_exptime_s = saturation_limit_e / peak_rate_e_s if peak_rate_e_s > 0 else np.inf
@@ -145,4 +193,7 @@ class PhotometryETC:
             "digitization_noise_e": float(np.sqrt(digitization_var)),
             "source_geometry": geometry,
             "sky_mag_arcsec2": sky_mag,
+            "sky_subtraction_factor": float(subtraction_factor),
+            "radial_velocity_kms": float(radial_velocity_kms),
+            "ebv": float(ebv),
         }

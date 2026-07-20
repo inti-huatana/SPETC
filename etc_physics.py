@@ -183,6 +183,84 @@ def normalise_template_ab(template, magnitude, magnitude_band):
     return normalise_template_magnitude(template, magnitude, magnitude_band, 3631.0)
 
 
+def ccm89_a_lambda_over_av(wavelength_aa, r_v=3.1):
+    """Cardelli, Clayton & Mathis (1989) extinction law A(lambda)/A(V).
+
+    Implements the CCM89 infrared (0.3 <= x < 1.1 um^-1), optical/NIR
+    (1.1 <= x < 3.3) and ultraviolet (3.3 <= x <= 8) branches with
+    A(lambda)/A(V) = a(x) + b(x)/R_V, x = 1/lambda [um^-1].  Outside the
+    validity range the nearest-edge value is extended (the ETC's optical
+    templates rarely reach there).
+    """
+    wave_um = np.asarray(wavelength_aa, dtype=np.float64) * 1.0e-4
+    x = np.clip(1.0 / np.maximum(wave_um, 1e-12), 0.3, 8.0)
+    a = np.empty_like(x)
+    b = np.empty_like(x)
+    infrared = x < 1.1
+    a[infrared] = 0.574 * x[infrared] ** 1.61
+    b[infrared] = -0.527 * x[infrared] ** 1.61
+    optical = (x >= 1.1) & (x < 3.3)
+    y = x[optical] - 1.82
+    a[optical] = (1.0 + 0.17699 * y - 0.50447 * y**2 - 0.02427 * y**3 + 0.72085 * y**4
+                  + 0.01979 * y**5 - 0.77530 * y**6 + 0.32999 * y**7)
+    b[optical] = (1.41338 * y + 2.28305 * y**2 + 1.07233 * y**3 - 5.38434 * y**4
+                  - 0.62251 * y**5 + 5.30260 * y**6 - 2.09002 * y**7)
+    ultraviolet = x >= 3.3
+    xu = x[ultraviolet]
+    fa = np.where(xu >= 5.9, -0.04473 * (xu - 5.9) ** 2 - 0.009779 * (xu - 5.9) ** 3, 0.0)
+    fb = np.where(xu >= 5.9, 0.2130 * (xu - 5.9) ** 2 + 0.1207 * (xu - 5.9) ** 3, 0.0)
+    a[ultraviolet] = 1.752 - 0.316 * xu - 0.104 / ((xu - 4.67) ** 2 + 0.341) + fa
+    b[ultraviolet] = -3.090 + 1.825 * xu + 1.206 / ((xu - 4.62) ** 2 + 0.263) + fb
+    return a + b / float(r_v)
+
+
+def transformed_template(template, radial_velocity_kms=0.0, ebv=0.0, r_v=3.1):
+    """Apply a radial-velocity shift and CCM89 interstellar reddening.
+
+    The template wavelengths are shifted by lambda' = lambda (1 + v/c)
+    (positive v = receding) and the flux is attenuated by
+    10^(-0.4 E(B-V) R_V [A(lambda)/A(V)]).  The transformed template is then
+    calibrated to the entered reference magnitude as usual, which is correct
+    because the observed magnitude of a reddened star already contains its
+    reddening — the transformation changes the template's *colours*, not its
+    normalization.
+    """
+    wave, values = as_angstrom_curve(template, "template spectrum")
+    wave_aa = wave.to_value(u.AA)
+    velocity = float(radial_velocity_kms)
+    extinction = float(ebv)
+    if velocity == 0.0 and extinction == 0.0:
+        return np.column_stack((wave_aa, values))
+    shifted = wave_aa * (1.0 + velocity / c.to_value(u.km / u.s))
+    if extinction != 0.0:
+        a_lambda = extinction * float(r_v) * ccm89_a_lambda_over_av(shifted, r_v)
+        values = values * 10.0 ** (-0.4 * a_lambda)
+    return np.column_stack((shifted, values))
+
+
+def bin_integrated_flux(bin_edges_aa, wavelength_aa, f_lambda_values):
+    """Exact per-bin integral of a piecewise-linear spectrum [flux x A].
+
+    Builds the union of the native grid and the bin edges so trapezoidal
+    integration is exact for the piecewise-linear input, cumulatively
+    integrates once, and differences the cumulative integral at the bin
+    edges — O(n), unlike per-bin quadrature.  Outside the native coverage
+    the flux is zero (zero-filled observing-side convention).  This is the
+    resolution-invariant replacement for point-sampling F_lambda at the bin
+    centre: total counts of a spectral line no longer depend on R.
+    """
+    edges = np.asarray(bin_edges_aa, dtype=np.float64)
+    native_wave = np.asarray(wavelength_aa, dtype=np.float64)
+    native_flux = np.asarray(f_lambda_values, dtype=np.float64)
+    fine = np.union1d(native_wave, edges)
+    fine = fine[(fine >= edges.min()) & (fine <= edges.max())]
+    flux = np.interp(fine, native_wave, native_flux, left=0.0, right=0.0)
+    cumulative = np.concatenate(([0.0], np.cumsum(
+        0.5 * (flux[1:] + flux[:-1]) * np.diff(fine))))
+    cum_at_edges = np.interp(edges, fine, cumulative)
+    return np.diff(cum_at_edges)
+
+
 def collecting_area(telescope):
     diameter = float(telescope["diameter_mm"]) * u.mm
     obstruction = float(telescope.get("obstruction_mm", 0.0)) * u.mm
@@ -203,12 +281,20 @@ def atmospheric_transmission(wavelength, atmosphere):
         raise ValueError("Airmass must be finite and >= 1.")
     curve = atmosphere.get("transmission_curve")
     if curve is None:
-        return np.ones(wavelength.size)
-    # Outside the curve's tabulated range the atmosphere is certainly not
-    # opaque: extend the edge values rather than zero-filling.
-    zenith = interpolate_edge_extended(wavelength.to_value(u.AA), curve,
-                                       "atmospheric transmission curve", clip=(0.0, 1.0))
-    return np.clip(zenith, 0.0, 1.0) ** airmass
+        result = np.ones(wavelength.size)
+    else:
+        # Outside the curve's tabulated range the atmosphere is certainly not
+        # opaque: extend the edge values rather than zero-filling.
+        zenith = interpolate_edge_extended(wavelength.to_value(u.AA), curve,
+                                           "atmospheric transmission curve", clip=(0.0, 1.0))
+        result = np.clip(zenith, 0.0, 1.0) ** airmass
+    if atmosphere.get("include_telluric_bands", False):
+        # The smooth extinction curve carries no O2/H2O band structure;
+        # multiply in the parametric telluric model (already airmass-scaled
+        # internally through its curve-of-growth exponents).
+        from observing_conditions import telluric_transmission
+        result = result * telluric_transmission(wavelength.to_value(u.AA), airmass)
+    return result
 
 
 def instrument_transmission(wavelength, telescope):
@@ -236,11 +322,14 @@ FWHM_TO_SIGMA = 2.354820045
 
 
 def _moffat_alpha(seeing_arcsec, beta):
-    """Moffat core radius alpha from the FWHM: FWHM = 2 alpha sqrt(2^(1/beta) - 1)."""
+    """Moffat core radius alpha from the FWHM: FWHM = 2 alpha sqrt(2^(1/beta) - 1).
+
+    ``seeing_arcsec`` may be a scalar or an array (wavelength-dependent seeing).
+    """
     beta = float(beta)
     if beta <= 1.0:
         raise ValueError("Moffat beta must exceed 1 for a finite total flux.")
-    return float(seeing_arcsec) / (2.0 * np.sqrt(2.0 ** (1.0 / beta) - 1.0))
+    return np.asarray(seeing_arcsec, dtype=float) / (2.0 * np.sqrt(2.0 ** (1.0 / beta) - 1.0))
 
 
 def psf_encircled_energy(radius_arcsec, seeing_arcsec, psf_model="gaussian", moffat_beta=2.5):
@@ -272,20 +361,21 @@ def psf_slit_throughput(width_arcsec, seeing_arcsec, psf_model="gaussian", moffa
     throughput uses its CDF with no numerical integration.
     ``offset_arcsec`` decentres the PSF (e.g. atmospheric-dispersion drift).
     """
-    if width_arcsec <= 0 or seeing_arcsec <= 0:
+    seeing = np.asarray(seeing_arcsec, dtype=float)
+    if width_arcsec <= 0 or np.any(seeing <= 0):
         raise ValueError("Slit width and seeing must be positive.")
     half = 0.5 * float(width_arcsec)
     offset = np.abs(np.asarray(offset_arcsec, dtype=float))
     model = str(psf_model).strip().lower()
     if model == "gaussian":
         from scipy.special import erf
-        sigma = seeing_arcsec / FWHM_TO_SIGMA
+        sigma = seeing / FWHM_TO_SIGMA
         scale = np.sqrt(2.0) * sigma
         result = 0.5 * (erf((half - offset) / scale) + erf((half + offset) / scale))
     elif model == "moffat":
         from scipy.stats import t as student_t
         beta = float(moffat_beta)
-        alpha = _moffat_alpha(seeing_arcsec, beta)
+        alpha = _moffat_alpha(seeing, beta)
         nu = 2.0 * beta - 2.0
         scale = alpha / np.sqrt(nu)
         result = (student_t.cdf((half - offset) / scale, df=nu)
@@ -305,11 +395,33 @@ def slit_throughput(width_arcsec, seeing_arcsec):
     return psf_slit_throughput(width_arcsec, seeing_arcsec, "gaussian")
 
 
-def snr(source_e, sky_e, dark_e, read_noise_e, n_pixels, extra_variance_e2=0.0):
+def background_noise_factor(n_pixels, sky_annulus_pixels=0.0):
+    """Variance inflation from estimating the background in a finite region.
+
+    The CCD equation assumes the per-pixel background is known exactly.  In
+    practice it is measured from n_sky pixels (a sky annulus in photometry,
+    sky windows along the slit in spectroscopy), and subtracting that
+    estimate multiplies every per-pixel background variance term by
+    (1 + n_pix / n_sky) (Merline & Howell 1995).  ``sky_annulus_pixels`` = 0
+    (or None) keeps the ideal perfectly-known background.
+    """
+    n_sky = float(sky_annulus_pixels or 0.0)
+    if n_sky <= 0.0:
+        return 1.0
+    return 1.0 + float(n_pixels) / n_sky
+
+
+def snr(source_e, sky_e, dark_e, read_noise_e, n_pixels, extra_variance_e2=0.0,
+        sky_annulus_pixels=0.0):
     """CCD-equation S/N with an optional extra variance term [e^-2].
 
     ``extra_variance_e2`` collects non-Poisson contributions such as
-    scintillation and ADC quantization noise.
+    scintillation and ADC quantization noise.  ``sky_annulus_pixels``
+    inflates the background terms (sky, dark, read and the extra variance,
+    which is per-pixel apart from scintillation handled by the caller) by
+    the Merline & Howell sky-subtraction factor.
     """
-    variance = source_e + sky_e + dark_e + n_pixels * read_noise_e**2 + extra_variance_e2
+    factor = background_noise_factor(n_pixels, sky_annulus_pixels)
+    variance = (source_e + factor * (sky_e + dark_e + n_pixels * read_noise_e**2)
+                + extra_variance_e2)
     return source_e / np.sqrt(max(variance, 1e-300))

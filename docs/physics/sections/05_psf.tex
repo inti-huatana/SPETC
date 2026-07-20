@@ -1,6 +1,20 @@
 \section{Point-spread function and aperture coupling}
 \label{sec:psf}
 
+The point-spread function is the currency in which three different
+questions are paid: how much of a star's light enters a photometric
+aperture of a given radius, how much passes a slit of a given width and
+decentring, and how much lands on the single brightest pixel (the
+saturation question). All three are integrals of the same profile over
+different domains, and all three are sensitive to the profile's
+\emph{wings}: real seeing profiles carry far more energy at large radii
+than a Gaussian of the same FWHM, which makes Gaussian-based aperture
+corrections optimistic and Gaussian-based saturation predictions
+slightly pessimistic. \spetc{} therefore offers both the Gaussian (for
+comparability with other tools) and the Moffat profile (for realism),
+everywhere through analytic expressions --- no PSF is ever rendered or
+numerically integrated, which keeps the whole-night time series fast.
+
 The seeing-limited PSF is selectable between a circular Gaussian and a
 circular \citet{moffat1969} profile
 \begin{equation}
@@ -45,3 +59,45 @@ dispersion and spatial couplings. Figure~\ref{fig:psf} compares the models.
   centred coupling and soften the decentring penalty.}
   \label{fig:psf}
 \end{figure}
+
+\subsection{Wavelength and airmass dependence of the seeing}
+\label{sec:seeing-scaling}
+
+The seeing FWHM is not a constant of the night: Kolmogorov turbulence gives
+a Fried parameter $r_0 \propto \lambda^{6/5}(\cos z)^{3/5}$ and hence a
+seeing FWHM $\propto \lambda/r_0$,
+\begin{equation}
+  \mathrm{FWHM}(\lambda, X) \;=\; s_{V,\rm zenith}\;
+  X^{0.6}\;\Big(\frac{\lambda}{5000\,\text{\AA}}\Big)^{-0.2},
+  \label{eq:seeing-scaling}
+\end{equation}
+where $s_{V,\rm zenith}$ is the entered zenith seeing in $V$ and $X$ the
+airmass. This is the exact form used by ETC-42
+\citep[CeSAM/LAM,][\code{calculator/psf/Seeing.java}]{etc42}. As an
+optional mode, \spetc{} applies Eq.~(\ref{eq:seeing-scaling}) per wavelength
+in the spectroscopic slit and extraction couplings (so blue light suffers
+larger losses than red through the same slit), and at the observing band's
+pivot wavelength in photometry. Because the airmass factor is evaluated per
+time sample, the whole-night time series then correctly shows the seeing ---
+and the losses that follow from it --- degrading as the target sets. The
+mode is off by default, leaving the seeing flat; when it is on, the entered
+value is by definition the zenith $V$ seeing.
+
+\subsection{Guiding blur}
+\label{sec:guiding}
+
+Over a long exposure the star also moves: periodic error, polar-alignment
+drift and guiding corrections smear the image. If the tracking error is
+approximately Gaussian with rms $\sigma_g$ per axis, the time-averaged
+image is the seeing profile convolved with a Gaussian of FWHM
+$2.355\,\sigma_g$, and the effective image width entering every coupling
+of this section is
+\begin{equation}
+  \mathrm{FWHM}_{\rm eff} \;=\;
+  \sqrt{\mathrm{FWHM}_{\rm seeing}^2 + (2.355\,\sigma_g)^2}.
+\end{equation}
+An entered guiding rms of 0 (the default) reproduces the pure-seeing
+case; a typical unguided minute on a mid-range mount
+($\sigma_g \sim 1''$) visibly lowers aperture and slit couplings, which
+is exactly the effect amateurs observe between guided and unguided
+frames (v10.2).

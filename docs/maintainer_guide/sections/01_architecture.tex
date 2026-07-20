@@ -1,61 +1,171 @@
 \section{Architecture}
 
-\subsection{Layering}
+\subsection{Who this guide is for}
 
-\spetc{} is a flat Python package (no sub-packages) with a strict
-one-directional dependency rule: \textbf{physics modules never import the
-GUI}, and only \code{etc\_gui.py} imports Tk. The layers, bottom-up:
+This guide assumes you have never opened the \spetc{} source. It explains
+what the program is made of, how a calculation flows through it, where
+every kind of file lives, and then --- once the map is in your head ---
+how to change things safely: fix a bug, add a physical effect, add data,
+publish a release. Read this section and Sect.~\ref{sec:modules} before
+touching anything; the recipes of Sect.~\ref{sec:extending} then tell you
+exactly which file to open for each kind of change.
+
+\subsection{The shape of the program}
+
+\spetc{} is deliberately \emph{not} a framework: it is sixteen flat Python
+modules in one directory, no packages, no plugins, no configuration
+language. Two classes of module exist, distinguished by one strict rule:
+
+\begin{quote}
+\textbf{Physics modules never import the GUI, and only \code{etc\_gui.py}
+imports Tkinter.}
+\end{quote}
+
+The consequence is that everything scientific is importable, testable and
+scriptable from a plain Python session or the test suite, with no window
+involved; the GUI is a thin, replaceable skin. The batch tool
+\code{spetc\_batch.py} is the proof: it produces complete results using
+the same engines and zero Tk.
+
+Within the physics side, the modules form five layers, each depending
+only on the layers below it:
 
 \begin{enumerate}
-  \item \textbf{Foundations}: \code{spectral\_utils.py} (unit-aware curves,
-        coverage checks, file readers) and \code{observing\_conditions.py}
-        (scintillation, refraction/dispersion, quantization). No project
-        dependencies except each other's siblings.
-  \item \textbf{Physics core}: \code{etc\_physics.py} (radiometry, PSF,
-        S/N), \code{sky\_brightness.py} + \code{sky\_background.py} (sky
-        model), \code{ephemeris.py} (astropy coordinates, refraction,
-        airmass, parallactic angle), \code{atmospheric extinction} lives in
-        \code{etc\_physics.atmospheric\_transmission} with curve loading in
-        \code{spectral\_utils}.
-  \item \textbf{Engines}: \code{photometry.py} (\code{PhotometryETC}) and
-        \code{spectroscopy.py} (\code{SpectroscopyETC}); \code{detector.py}
-        (\code{Detector}); \code{solvers.py} (closed-form
-        exposure-for-S/N).
-  \item \textbf{Catalogues}: \code{star\_catalog.py} (template database),
-        \code{filter\_catalog.py} (SVO VOTable profiles),
-        \code{config\_manager.py} (built-in observatory presets).
-  \item \textbf{Presentation}: \code{etc\_gui.py} (Tk application, config
-        persistence, orchestration) and \code{matplotlib\_plots.py}
-        (native plot windows).
+\item \textbf{Foundations.} \code{spectral\_utils.py} defines the one
+  data structure the whole program shares: a \code{SpectralCurve}, a
+  validated pair of (strictly increasing wavelength in \AA{}, value)
+  arrays, with three interpolation policies that encode the project's
+  coverage philosophy --- \code{interpolate\_checked} (raise outside
+  coverage: for calibration), \code{interpolate\_zero\_filled} (assume
+  zero outside: for detector-side quantities like QE),
+  \code{interpolate\_edge\_extended} (extend the edge value: for the
+  atmosphere, which does not become opaque where a file ends). It also
+  reads two-column text files and atmospheric FITS tables.
+  \code{observing\_conditions.py} is a set of pure functions for the
+  atmosphere-as-noise: scintillation (Young's law, in both per-exposure
+  and per-second-of-variance form), Filippenko differential refraction,
+  and ADC quantization noise. Neither imports anything else of the
+  project except each other.
+\item \textbf{Physics core.} \code{etc\_physics.py} is the radiometric
+  heart: magnitude systems and zero points, synthetic photometry in the
+  SVO convention, the template flux calibration (the $m_{v0}$ machinery),
+  the electron-rate integral, the PSF models (Gaussian and Moffat, with
+  their aperture and slit couplings) and the CCD signal-to-noise
+  equation. \code{sky\_brightness.py} and \code{sky\_background.py}
+  together model the sky: the first owns the component physics (van
+  Rhijn airglow, zodiacal light, starlight, the Krisciunas--Schaefer
+  Moon) and the shared constant tables; the second owns the
+  \emph{normalization policy} --- which component sets the level at a
+  given Sun altitude (dark table, SQM reading, Weaver daylight, twilight
+  blend). \code{ephemeris.py} wraps Astropy for everything positional:
+  refraction-corrected altitude--azimuth tracks, Pickering airmass,
+  Sun/Moon positions and phase, parallactic angle, and coordinate/time
+  parsing.
+\item \textbf{Engines.} \code{photometry.py} and \code{spectroscopy.py}
+  each expose one class with one compute method. They accept what we call
+  the \emph{four-dictionary context} --- \code{telescope} (a plain dict
+  of numbers and optional curves), \code{detector} (a \code{Detector}
+  instance from \code{detector.py}), \code{atmosphere} (airmass, seeing,
+  PSF model, elevation, transmission curve), \code{sky\_model}
+  (brightness, calibration, geometry) --- plus per-call arguments, and
+  return plain results: a dict for photometry, a \code{pandas.DataFrame}
+  with metadata in \code{.attrs} for spectroscopy. This context is the
+  API contract of the whole program: anything that can build those four
+  objects can run the ETC. \code{solvers.py} inverts the S/N equation in
+  closed form and plans frame stacks.
+\item \textbf{Catalogues.} \code{star\_catalog.py} parses the template
+  catalogue and loads spectra (ASCII and CALSPEC-style FITS);
+  \code{filter\_catalog.py} parses SVO VOTable filter profiles and lists
+  the available filters; \code{config\_manager.py} loads the built-in
+  observatory presets.
+\item \textbf{Presentation and tools.} \code{etc\_gui.py} (the Tk
+  application) and \code{matplotlib\_plots.py} (the native plot windows)
+  on the interactive side; \code{spetc\_batch.py},
+  \code{make\_filter\_profile.py} and \code{add\_template.py} as
+  command-line tools; \code{self\_check.py} and
+  \code{tests/test\_spectral\_pipeline.py} as the test entry points.
 \end{enumerate}
 
-\subsection{Data flow of one calculation}
+\subsection{One calculation, end to end}
+
+To understand the code, follow one press of \textsf{Run ETC} through it.
 
 \begin{enumerate}
-  \item \code{etc\_gui.\_run\_etc} validates inputs, resolves the target
-        track with \code{ephemeris.compute\_target\_track} (refraction,
-        Pickering airmass, parallactic angle per sample).
-  \item \code{\_sky\_models\_for\_track} converts the ICRS target to
-        ecliptic/galactic latitudes and builds, per time sample, an
-        observed-sky dictionary (brightness, colour model, spectral
-        $\flam$) from \code{sky\_background} + \code{sky\_brightness}.
-  \item Per time sample, an engine object is built with four plain
-        dictionaries --- \code{telescope}, \code{detector} (a
-        \code{Detector}), \code{atmosphere}, \code{sky\_model} --- and
-        returns a result dict (photometry) or \code{pandas.DataFrame}
-        (spectroscopy).
-  \item The GUI assembles the time-series table, feeds the plot windows and
-        the Results window, and persists the configuration.
+\item \textbf{Input validation.} \code{ETCGUI.\_run\_etc} reads every
+  relevant Tk variable, converts and range-checks it, and constructs the
+  target coordinates. Anything invalid raises \code{ValueError} with a
+  human sentence; the GUI catches it and shows it --- this is the
+  program's error policy everywhere: \emph{raise early, with the
+  offending number in the message, and never substitute a silent
+  default}.
+\item \textbf{Ephemerides.} \code{ephemeris.compute\_target\_track}
+  produces, for a window of $\pm$18 hours around the chosen time, the
+  refraction-corrected altitude, azimuth, Pickering airmass, parallactic
+  angle, and the Sun and Moon positions, separations and phase at
+  five-minute steps. Everything time-dependent downstream is evaluated on
+  this track.
+\item \textbf{Sky models.} \code{\_sky\_models\_for\_track} converts the
+  target's ICRS coordinates to ecliptic and galactic latitude once, then
+  builds one sky-model dictionary per time sample: the observed surface
+  brightness in the observing band (from the ING physical model, the
+  user's SQM reading, or a fixed value, plus the Moon term), the
+  photometric zero point it is expressed in, and the spectral colour
+  model used by spectroscopy.
+\item \textbf{Engine loop.} For every visible time sample, the GUI builds
+  the four-dictionary context and calls the engine. In target-S/N mode it
+  first calls the engine at 1\,s to obtain rates, inverts the S/N
+  equation in closed form (\code{solvers.exposure\_time\_for\_snr},
+  scintillation included as an extra variance rate), and calls the
+  engine again at the solved exposure. Full spectra are computed only at
+  the selected time and at the plot-slider samples; all other samples
+  evaluate just the reference-wavelength bin, which keeps a night's
+  planning at $R = 100\,000$ responsive.
+\item \textbf{Aggregation and display.} The per-time values become the
+  time-series DataFrame (one row per sample: time, geometry, parallactic
+  angle, airmass, S/N or required exposure, sky brightness, extinction,
+  saturation); the selected-time result becomes the results table; the
+  stack planner and the differential-precision helper run on the
+  selected-time rates; plots and the parameters/outputs log are
+  refreshed; the configuration is saved.
 \end{enumerate}
 
-The four-dictionary interface is the API contract: anything scriptable
-headlessly (tests, batch use) constructs those dictionaries directly, as
-\code{self\_check.py} does.
+\subsection{Inputs and outputs at a glance}
 
-\subsection{Conventions}
+\begin{center}
+\begin{tabular}{llp{6.6cm}}
+\toprule
+File & Direction & Role \\
+\midrule
+\code{data/interpola.db.csv} & in & template catalogue (GUI list) \\
+\code{data/bpgs/*}, \code{data/imported/*} & in & template spectra (ASCII/FITS) \\
+\code{data/filters.list}, \code{data/filters/*.xml} & in & filter profiles (SVO VOTable) \\
+\code{data/qe.dat}, curve files & in & QE, optics response, slit-$R$, gain table \\
+\code{data/earth\_atmospheric\_transmission.fits} & in & measured zenith transmission \\
+\code{etc\_sites.json}, \code{observatories.json} & in/out & site lists \\
+\code{etc\_user\_config.json} & in/out & full GUI state, rewritten each run \\
+instrument profile JSON + curve copies & in/out & portable per-instrument setup \\
+result CSV / time-series CSV & out & full numerical results (every engine field) \\
+batch JSON & in & headless run description \\
+batch result CSV + HTML summary & out & headless outputs \\
+\code{dem\_cache/*.tif} & in/out & cached Copernicus DEM tiles \\
+\code{data/horizons/*.csv} & out & generated horizon profiles \\
+\bottomrule
+\end{tabular}
+\end{center}
 
-Wavelengths are \AA{}ngstr\"om internally; every user-supplied curve
-declares its unit explicitly and is converted once on load. Radiometric
-integrals carry \code{astropy.units}. Missing wavelength coverage is a hard
-\code{ValueError}, never a silent zero. Azimuth N=0/E=90; times are UTC
-inside, converted for display only.
+The complete field-by-field specification of every input format is in the
+\emph{User Guide}, Sect.~6, written to be sufficient for producing the
+files from scratch; this guide does not duplicate it, but
+Sect.~\ref{sec:formats} adds the parsing internals a maintainer needs.
+
+\subsection{Project conventions}
+
+Wavelengths are \AA{}ngstr\"om internally, everywhere; every user-facing
+curve declares its unit explicitly and is converted once at load. All
+radiometric integrals carry \code{astropy.units} and are reduced to
+floats only at the engine boundary. Constants are named after their
+paper (\code{SOLAR\_MINIMA}, \code{MOON\_FUDGE}); every empirical
+relation cites its reference in the docstring; every physical claim in
+the code has a regression test pinned to a published number, not to the
+code's own output. Azimuth is N$=0^\circ$/E$=90^\circ$; times are UTC
+internally and converted only for display.

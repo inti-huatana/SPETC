@@ -154,7 +154,14 @@ def compute_target_track(ra_deg, dec_deg, lat_deg, lon_deg, jd_start, jd_end,
     frame = _refraction_frame(time, lat_deg, lon_deg, elev_m)
     target = SkyCoord(float(ra_deg) * u.deg, float(dec_deg) * u.deg, frame="icrs")
     target_altaz = target.transform_to(frame)
-    sun_altaz = get_sun(time).transform_to(frame)
+    sun = get_sun(time)
+    sun_altaz = sun.transform_to(frame)
+    # Twilight thresholds (-6/-12/-18 deg) are conventionally defined on the
+    # geometric, unrefracted Sun altitude; near the horizon the refracted
+    # altitude differs by up to ~0.5 deg and would shift the twilight class.
+    geometric_frame = AltAz(obstime=time, location=_location(lat_deg, lon_deg, elev_m),
+                            pressure=0 * u.hPa)
+    sun_geometric = sun.transform_to(geometric_frame)
     moon = get_body("moon", time, location=_location(lat_deg, lon_deg, elev_m))
     moon_altaz = moon.transform_to(frame)
     alt = target_altaz.alt.to_value(u.deg)
@@ -166,6 +173,10 @@ def compute_target_track(ra_deg, dec_deg, lat_deg, lon_deg, jd_start, jd_end,
     airmass[above_cutoff] = pickering_airmass(alt[above_cutoff])
     moon_sep = target_altaz.separation(moon_altaz).to_value(u.deg)
     phase = sun_altaz.separation(moon_altaz).to_value(u.deg)
+    # Solar elongation of the target (for the zodiacal-light gradient) and
+    # the topocentric Moon distance (for the moonlight illuminance).
+    sun_sep = target_altaz.separation(sun_altaz).to_value(u.deg)
+    moon_distance_km = moon.distance.to_value(u.km)
     lst = time.sidereal_time("apparent", longitude=float(lon_deg) * u.deg)
     hour_angle = (lst - float(ra_deg) * u.hourangle / 15.0).wrap_at(180 * u.deg).to_value(u.deg)
     parallactic = parallactic_angle_deg(hour_angle, dec_deg, lat_deg)
@@ -182,8 +193,16 @@ def compute_target_track(ra_deg, dec_deg, lat_deg, lon_deg, jd_start, jd_end,
             "alt_target": alt, "az_target": target_altaz.az.to_value(u.deg), "airmass_target": airmass,
             "parallactic_deg": parallactic,
             "alt_sun": sun_altaz.alt.to_value(u.deg), "az_sun": sun_altaz.az.to_value(u.deg),
+            "alt_sun_geometric": sun_geometric.alt.to_value(u.deg),
             "alt_moon": moon_altaz.alt.to_value(u.deg), "az_moon": moon_altaz.az.to_value(u.deg),
-            "phase_moon": phase, "moon_sep_deg": moon_sep}
+            "phase_moon": phase, "moon_sep_deg": moon_sep,
+            "sun_sep_deg": sun_sep, "moon_distance_km": moon_distance_km}
+
+
+# Standard almanac convention for sunrise/sunset: the *upper limb* touches
+# the geometric horizon with standard refraction, i.e. the Sun's centre at
+# geometric altitude -50' = -(34' refraction + 16' semidiameter).
+SUN_RISE_SET_ALTITUDE_DEG = -50.0 / 60.0
 
 
 # Compatibility wrappers retained for callers outside the GUI.

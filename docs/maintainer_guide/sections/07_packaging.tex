@@ -1,0 +1,121 @@
+\section{Packaging: single-file executables for Linux, Windows and macOS}
+\label{sec:packaging}
+
+\subsection{Principles}
+
+The code is pure Python with no compiled components of its own, so
+``porting'' is a packaging exercise, done with PyInstaller. Three facts
+shape everything below. First, \textbf{PyInstaller does not
+cross-compile}: a Windows \code{.exe} must be built on Windows, a macOS
+app on macOS, a Linux binary on Linux --- one build per platform, all
+from the same source and the same spec. Second, in \code{--onefile} mode
+the executable unpacks itself to a temporary directory at every start;
+bundled data is found under \code{sys.\_MEIPASS}, \emph{not} next to the
+executable, so path handling needs the small shim below. Third, the
+program \emph{writes} beside itself (\code{etc\_user\_config.json},
+\code{etc\_sites.json}, imported templates) --- those files must live in
+a real, persistent, user-writable directory, never inside the bundle.
+
+The clean policy, and the one assumed here: \textbf{bundle the read-only
+\code{data/} directory inside the executable, keep the writable files
+beside the executable}. Add this resolver near the top of
+\code{etc\_gui.py} (and use it wherever the default data directory is
+composed):
+
+\begin{verbatim}
+import sys
+from pathlib import Path
+
+def bundled_data_dir():
+    """data/ inside a PyInstaller bundle, or beside the source."""
+    if getattr(sys, "frozen", False):        # running from PyInstaller
+        return Path(sys._MEIPASS) / "data"
+    return Path(__file__).resolve().parent / "data"
+\end{verbatim}
+
+The GUI's data-directory field keeps working as the override for users
+with their own data trees.
+
+\subsection{Common build steps}
+
+On each platform, in a fresh virtual environment:
+
+\begin{verbatim}
+python3 -m venv build-env
+. build-env/bin/activate        # Windows: build-env\Scripts\activate
+pip install -r requirements.txt pyinstaller
+pyinstaller --onefile --windowed --name spetc \
+    --add-data "data:data" \
+    --add-data "etc_sites.json:." \
+    --add-data "observatories.json:." \
+    etc_gui.py
+\end{verbatim}
+
+(On Windows the \code{--add-data} separator is a semicolon:
+\code{"data;data"}.) The result lands in \code{dist/}. PyInstaller's
+built-in hooks handle NumPy, SciPy, Matplotlib and Astropy; two points
+need attention. Astropy must not try to download IERS tables from a
+frozen app --- the code already sets \code{iers.conf.auto\_download =
+False}, so the bundled table is used; verify by running the frozen app
+with the network off. And Matplotlib should be pinned to the TkAgg
+backend in the frozen app (\code{MPLBACKEND=TkAgg} via the spec's
+\code{runtime\_hooks} or an environment default) to avoid backend probing
+at start-up.
+
+Always test the frozen build with the checklist: starts offline; template
+list populated (bundled data found); a photometry and a spectroscopy run
+complete; \textsf{Save instrument profile} and site saving write real
+files next to the executable; the two CSV exports open.
+
+\subsection{Linux}
+
+The onefile binary from the recipe above runs on any distribution with
+glibc at least as new as the build machine's --- so \textbf{build on the
+oldest distribution you want to support} (a container of Debian
+oldstable or Ubuntu LTS is the usual choice). Tk is bundled by
+PyInstaller. Users make it executable (\code{chmod +x spetc}) and run
+it. For desktop integration ship a \code{.desktop} file, or go one step
+further and wrap \code{dist/spetc} into an AppImage with
+\code{appimagetool}, which adds the icon/menu integration without
+changing anything in the build.
+
+\subsection{Windows}
+
+Build with the python.org interpreter (not the Microsoft Store one,
+whose sandbox breaks file dialogs and per-user paths). The recipe yields
+\code{dist\textbackslash spetc.exe}; \code{--windowed} suppresses the
+console window. Two Windows realities to plan for: SmartScreen will warn
+on an unsigned executable --- users click ``More info $\to$ Run
+anyway'', or you sign with an Authenticode certificate; and some
+antivirus products false-positive on PyInstaller onefile stubs --- if
+reports come in, prefer \code{--onedir} (a folder instead of a single
+file, same command without \code{--onefile}, zipped for distribution),
+which is far less often flagged. High-DPI rendering is handled by Tk on
+Python $\geq$ 3.12; on older versions call
+\code{ctypes.windll.shcore.SetProcessDpiAwareness(1)} at start-up if the
+UI looks blurry.
+
+\subsection{macOS}
+
+Build on the oldest macOS you want to support, with the python.org
+universal2 interpreter (bundles its own Tcl/Tk; never use the system
+Python). With \code{--windowed} PyInstaller produces both a UNIX binary
+and a \code{spetc.app} bundle --- distribute the \code{.app}, zipped.
+Gatekeeper will quarantine an unsigned download: users right-click
+$\to$ \emph{Open} once, or remove the attribute
+(\code{xattr -dr com.apple.quarantine spetc.app}); for friction-free
+distribution you need an Apple Developer ID, \code{codesign
+--deep} and notarization with \code{xcrun notarytool} --- mechanical
+but paid. An app built on Apple Silicon runs on Intel Macs only through
+Rosetta if built \code{universal2}; check
+\code{lipo -archs dist/spetc.app/Contents/MacOS/spetc} if you support
+both.
+
+\subsection{Reproducibility}
+
+Commit the generated \code{spetc.spec} once it works --- it \emph{is}
+the build configuration --- and record in the release notes the Python
+and PyInstaller versions of each artefact. A small
+\code{build.sh}/\code{build.bat} that creates the venv, installs pinned
+versions and runs PyInstaller turns the release build into one command
+per platform.

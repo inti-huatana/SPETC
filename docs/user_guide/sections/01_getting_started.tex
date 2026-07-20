@@ -1,42 +1,149 @@
 \section{Getting started}
 
-\subsection{Requirements and installation}
+\subsection{What \spetc{} is and what it computes}
 
-\spetc{} needs Python 3.10 or later with Tk support. Install the
-dependencies and start the program from the distribution directory:
+\spetc{} answers the two questions every observation begins with: \emph{what
+signal-to-noise ratio will I reach in a given exposure}, and \emph{how long
+must I expose to reach the signal-to-noise ratio I need}. It answers them
+for two kinds of measurement: broad-band aperture photometry (measuring the
+brightness of an object through a filter) and spectroscopy (dispersing the
+light with a slit spectrograph or a slitless grating such as the Star
+Analyser and measuring the spectrum). The program is not tied to any
+particular observatory: you describe \emph{your} telescope, \emph{your}
+camera and \emph{your} sky, and the program predicts what that combination
+will deliver on a target of a given brightness and spectral type, at a
+given place on the sky, at a given time of a given night.
+
+The prediction is physical, not statistical: the program starts from an
+absolutely calibrated template spectrum of a star similar to your target,
+scales it to the magnitude you enter, pushes that spectrum through every
+element of the light path --- the atmosphere at the current airmass, the
+telescope aperture, the filter, the optics, the detector quantum
+efficiency --- and counts the photo-electrons that arrive in your aperture
+or in each spectral resolution element. It then adds every noise source
+that a real detector and a real atmosphere contribute (photon noise from
+the object and the sky, dark current, read noise, atmospheric
+scintillation, analogue-to-digital quantization) and reports the resulting
+signal-to-noise ratio, along with a saturation prediction for the
+brightest pixel. The companion document \emph{Physics of the ETC} derives
+every formula; this guide tells you which buttons to press and what the
+numbers mean.
+
+\subsection{Requirements}
+
+You need Python 3.10 or newer with Tk support. Tk (the graphical toolkit)
+is included in the standard installers from \url{python.org} on Windows
+and macOS; on Linux it is usually a separate package (for example
+\code{sudo apt install python3-tk} on Debian/Ubuntu or
+\code{sudo dnf install python3-tkinter} on Fedora). Everything else is
+installed with pip. In a terminal, change into the directory where you
+unpacked \spetc{} and run:
 
 \begin{verbatim}
 python3 -m pip install -r requirements.txt
 python3 etc_gui.py
 \end{verbatim}
 
-The \code{data/} directory shipped with the program must stay beside
-\code{etc\_gui.py}; it contains the stellar template catalogue
-(\code{interpola.db.csv} and the CALSPEC/BPGS spectra), the default detector
-QE curve (\code{qe.dat}), the SVO filter profiles with their list
-(\code{filters.list}), the optional \code{BLANK.xml} unfiltered passband and
-the optional Earth-atmosphere FITS table. The data directory can also be
-pointed elsewhere from the \textsf{Stellar template selector} panel.
+The first command installs the scientific libraries the program is built
+on (NumPy, SciPy, pandas, Matplotlib, Astropy and astroquery). The second
+starts the program. On Windows, replace \code{python3} with \code{py}.
 
-\subsection{First launch}
+\subsection{The data directory}
 
-On start-up \spetc{} restores the last saved configuration from
-\code{etc\_user\_config.json} (created automatically; the default preset is
-Asiago/Cima Ekar) and the most recently used instrument profile, if any. The
-configuration is re-saved after every successful calculation and on normal
-exit, so the program always reopens as you left it.
+Beside \code{etc\_gui.py} there must be a directory called \code{data}.
+It is the program's library and ships ready to use; you never need to edit
+it to get started, but you will add to it as you customise the program, so
+it is worth knowing what lives inside:
 
-\subsection{A one-minute first calculation}
+\begin{description}
+\item[\code{interpola.db.csv}] The \emph{template catalogue}: one line per
+  stellar template, giving its name, spectral type, brightness
+  calibration and the file that holds its spectrum. The template list you
+  see in the GUI is this file, read at start-up. Its exact format is
+  specified in Sect.~\ref{sec:file-catalog}.
+\item[\code{bpgs/}] The template spectra themselves: absolutely calibrated
+  stellar spectra from the Bohlin CALSPEC/BPGS libraries, one file per
+  star, covering the main spectral types from O to M plus the Sun and
+  Vega. You can add your own (Sect.~\ref{sec:file-templates}).
+\item[\code{filters.list} and \code{filters/}] The list of available
+  filters and their transmission profiles in the Spanish Virtual
+  Observatory (SVO) XML format --- Johnson--Cousins, Sloan, 2MASS and
+  others, each carrying its own photometric calibration. The special
+  \code{BLANK.xml} profile represents ``no filter at all''
+  (Sect.~\ref{sec:file-filters}).
+\item[\code{qe.dat}] The default detector quantum-efficiency curve: how
+  many electrons the sensor produces per incoming photon, as a function of
+  wavelength (Sect.~\ref{sec:file-curves}).
+\item[\code{earth\_atmospheric\_transmission.fits}] Optional: a measured
+  atmospheric transmission table (the shipped one is the Paranal
+  extinction product). When absent, a built-in broad-band extinction
+  table is used instead.
+\end{description}
 
-\begin{enumerate}
-  \item Pick a site from the \textsf{Observatory} selector (or type
-        latitude, longitude, elevation).
-  \item Set the date and UT time, or leave the current time.
-  \item Type target coordinates (decimal or sexagesimal), or type a name and
-        press \textsf{Resolve name} (needs internet; nothing else ever
-        does).
-  \item Select an observing filter and a stellar template; enter the target
-        magnitude.
-  \item Press \textsf{Run ETC}. The Results window opens with the numbers;
-        the plot window shows S/N versus time, altitude, and the sky path.
-\end{enumerate}
+Two more files live beside the program itself rather than in \code{data}:
+\code{etc\_sites.json}, your personal list of observing sites, and
+\code{etc\_user\_config.json}, the saved state of every control in the
+window. Both are created and updated automatically.
+
+\subsection{First launch and configuration persistence}
+
+On the first start you get the default configuration: the Asiago (Cima
+Ekar) observatory, a 358-mm telescope, and Vega as the target template.
+Every control in the window --- every number, every selector --- is saved
+to \code{etc\_user\_config.json} after each successful calculation and
+when you quit, and restored on the next start. There is no ``save
+settings'' button because saving is automatic; to transfer your setup to
+another computer, copy that file (and your instrument profile, see
+Sect.~\ref{sec:profiles}) along with the program.
+
+\subsection{A first calculation, explained}
+
+The fastest way to understand the program is to run it once. The
+following walk-through predicts the photometry of a 10th-magnitude star
+tonight.
+
+First, tell the program \emph{where} you are. In the leftmost column,
+open the site selector and choose one of the built-in observatories, or
+type your latitude (degrees, north positive), longitude (degrees, east
+positive) and elevation (metres) directly into the three fields. The
+site matters more than it may seem: the latitude and longitude determine
+when and how high your target rises, the elevation sets the atmospheric
+pressure used for refraction and the air mass of turbulence responsible
+for scintillation noise.
+
+Second, tell it \emph{when} you observe. Set the date and the UT time.
+If you think in local time, note the timezone selector: choose an IANA
+timezone name such as \code{Europe/Rome} and the program handles daylight
+saving for you in all displayed local times; the calculation itself
+always runs on UT.
+
+Third, tell it \emph{what} you observe. Type the target coordinates into
+the RA and Dec fields. Both decimal degrees (\code{279.2347}) and
+sexagesimal (\code{18:36:56.3}) forms are accepted. If you know only the
+object's name, type it into the name field and press \textsf{Resolve
+name}: the program queries the SIMBAD database (this is the only feature
+that uses the internet) and fills the coordinate fields for you. Then
+enter the target's magnitude --- say 10.0 --- and check that the
+\emph{reference filter} selector says in which band that magnitude is
+expressed (V, by default) and in which system (Vega, by default).
+
+Fourth, choose a template. In the template list, pick a star of roughly
+the same spectral type as your target --- for a Sun-like target choose a
+G2V, for a hot star a B or A star. The template provides the \emph{shape}
+of the spectrum; your entered magnitude provides the level. The panel
+shows a preview of the selected spectrum so you can see what you picked.
+
+Finally, press the green \textsf{Run ETC} button. Three things appear:
+the \textbf{Results window} with the numbers (Sect.~\ref{sec:results}),
+the \textbf{plot window} with S/N versus time across the night, the
+altitude track and the sky path of the target, Sun and Moon, and the
+status line reporting completion. The red marker in the plots is the
+time you selected; the curve around it shows how the same observation
+would fare earlier or later in the night, with the sky brightness, the
+airmass and the Moon recomputed at every time step.
+
+If the button is grey rather than green, the program is telling you that
+the current combination cannot be computed --- most often because the
+selected template does not overlap the selected filter. The message above
+the response preview says exactly what is wrong; fix the selection and
+the button turns green.

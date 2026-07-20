@@ -1,14 +1,35 @@
 \section{Radiometric framework}
 \label{sec:radiometry}
 
+The radiometric layer solves one problem: converting between the
+languages of catalogues (magnitudes in named bands and systems) and the
+language of detectors (photo-electrons per second). The conversion must
+be exact in its conventions, because its errors are invisible ---
+a wrong zero point or a magnitude-system confusion does not crash
+anything, it just biases every prediction by a constant factor. The
+layer therefore leans on three externally defined standards: the AB
+system's universal 3631-Jy zero point, the SVO Filter Profile Service's
+definition of a filter (transmission curve + zero point + detector-type
+flag, all in one file), and the CALSPEC absolute spectrophotometry that
+anchors the Vega scale. Everything else in the program consumes this
+layer's outputs and never touches a magnitude again.
+
 \subsection{Magnitude systems and zero points}
 
-A magnitude $m$ in a system with $F_\nu$ zero point $Z_\nu$ (in Jy)
-corresponds to the monochromatic flux density
+A magnitude is a logarithmic flux ratio: $m = -2.5\log_{10}(F/F_{\rm
+zero})$, where $F_{\rm zero}$ is the flux of a zero-magnitude source
+\emph{in the same system and band}. A magnitude system is therefore fully
+specified by its zero point. Systems are conventionally anchored in
+frequency space: a magnitude $m$ in a system whose zero-magnitude source
+has the (frequency) flux density $Z_\nu$ (in jansky,
+$1\,\mathrm{Jy}=10^{-23}\,\si{erg.s^{-1}.cm^{-2}.Hz^{-1}}$) corresponds to
+the wavelength flux density
 \begin{equation}
   \flam(\lambda) \;=\; Z_\nu \, \frac{c}{\lambda^2}\; 10^{-0.4\,m},
   \label{eq:flam}
 \end{equation}
+where the factor $c/\lambda^2$ is the Jacobian $|d\nu/d\lambda|$ that
+converts per-hertz to per-\aa ngstr\"om flux,
 which the code evaluates with \code{astropy} units
 (\code{magnitude\_f\_lambda}). The AB system \citep{oke1983} uses
 $Z_\nu = \SI{3631}{Jy}$ at every wavelength; Vega systems use the per-filter
@@ -17,8 +38,11 @@ zero points delivered inside each SVO filter profile
 
 \subsection{Synthetic photometry (SVO convention)}
 
-The synthetic magnitude of a spectrum $\flam$ in a filter with response
-$T_\lambda$ is
+A \emph{synthetic} magnitude is the magnitude a spectrum \emph{would}
+have if measured through a filter — computed by integrating the spectrum
+against the filter response instead of observing it. For a spectrum
+$\flam$ and a filter of transmission $T_\lambda$ (the fraction of light
+the filter passes at $\lambda$, between 0 and 1) it is
 \begin{equation}
   m \;=\; -2.5\,\log_{10}
   \frac{\displaystyle\int \flam\,T_\lambda\, W_\lambda\, d\lambda}
@@ -29,9 +53,13 @@ $T_\lambda$ is
   \label{eq:synthmag}
 \end{equation}
 where $\flam^{\,0}$ is the zero-magnitude spectrum of
-Eq.~(\ref{eq:flam}) and the weighting follows the SVO
-\code{DetectorType} flag of the profile. Both conventions are implemented and
-regression-tested; for a coloured source they differ measurably.
+Eq.~(\ref{eq:flam}) and the weighting $W_\lambda$ follows the SVO
+\code{DetectorType} flag of the profile: a photon-counting detector (CCD,
+CMOS) responds to the photon \emph{number}, which for a given energy flux
+grows as $\lambda$ (red photons are cheaper), so its integrand carries an
+extra factor $\lambda$; a bolometric/energy-integrating detector does not.
+Both conventions are implemented and regression-tested; for a coloured
+source they differ measurably.
 
 \subsection{Template calibration}
 \label{sec:template}
@@ -51,18 +79,68 @@ reference filter differs from the visual response, and is exactly zero in the
 original $V$-only case, which then reduces to the Fortran scale factor
 $10^{-0.4(V_{\rm target}-m_{v0})}$.
 
+\subsection{Template sources}
+
+Templates are two-column ASCII or CALSPEC/STScI-style FITS binary tables
+(\code{WAVELENGTH}/\code{FLUX}, TUNIT-aware), which admits the whole STScI
+reference-atlas family: the CALSPEC standards, the solar-system
+surface-brightness atlas, the galactic emission-line atlas, the transient
+templates and the CLOUDY planetary-nebula grids. On import, the synthetic
+Vega $V$ magnitude of each file is computed against the shipped Bessell.V
+profile and stored as the catalogue $m_{v0}$; since the ETC rescales every
+template to the entered target magnitude, files with arbitrary or
+surface-brightness flux units remain fully usable — only the spectral shape
+and the self-consistent $m_{v0}$ matter. Templates that do not fully cover
+the $V$ response carry an approximate $m_{v0}$ and should be used with $V$
+as the reference filter (the exact same-response path).
+
+\subsection{Radial velocity and interstellar reddening}
+\label{sec:transform}
+
+A template can optionally be transformed before calibration to represent a
+moving or reddened star. A radial velocity $v$ (positive receding) shifts
+every wavelength by $\lambda \rightarrow \lambda\,(1 + v/c)$ — for
+$v = 300$ km/s a line at \SI{5500}{\angstrom} moves by \SI{5.5}{\angstrom},
+comparable to a low-resolution element, so the shift matters exactly where
+line diagnostics are attempted. Interstellar dust attenuates the flux by
+$10^{-0.4\,A(\lambda)}$ with the \citet{cardelli1989} (CCM89) extinction
+law $A(\lambda) = E(B\!-\!V)\,R_V\,[A(\lambda)/A(V)]$, where the colour
+excess $E(B\!-\!V)$ is the entered reddening, $R_V = 3.1$ is the standard
+diffuse-ISM ratio of total to selective extinction, and the bracketed
+shape function is CCM89's piecewise polynomial in $1/\lambda$. Both
+transforms are applied \emph{before} the calibration of
+Sect.~\ref{sec:template}, which is the physically correct order: the
+observed magnitude of a reddened star already contains its reddening, so
+the transformation must change the template's \emph{colours} while the
+calibration re-imposes the observed \emph{level}.
+
 \subsection{Detected electron rate}
 
-The photo-electron rate through the full system is
+The end product of the layer is the rate of detected photo-electrons.
+Every term of the chain now has a defined meaning: $A$ is the collecting
+area (Sect.~\ref{sec:notation}), $\eta$ the scalar efficiency,
+$T_\lambda$ the observing-filter transmission, $Q_\lambda$ the detector
+quantum efficiency, $O_\lambda$ the optics throughput curve,
+$T_{\rm atm}^{\,X}$ the atmospheric transmission at airmass $X$
+(Sect.~\ref{sec:atmosphere}), and $\lambda/hc$ converts energy flux to
+photon number. The rate is
 \begin{equation}
   \dot S \;=\; A\,\eta \int
   \flam^{\rm cal}\; T_\lambda\, Q_\lambda\, O_\lambda\,
   T_{\rm atm}(\lambda)^{X}\;
-  \frac{\lambda}{hc}\; d\lambda ,
+  \frac{\lambda}{hc}\; d\lambda .
   \label{eq:rate}
 \end{equation}
-with the trapezoidal quadrature carried out on the filter grid
-(photometry) or per resolution element (spectroscopy). Wavelength coverage is
-a hard requirement: a template, QE curve, filter or atmospheric table that
-does not cover the requested interval raises an error instead of silently
-zero-filling.
+The quadrature is trapezoidal on the \emph{union} of the filter grid, the
+template grid and a dense baseline grid, which makes it exact for the
+piecewise-linear tabulated inputs: a narrow template emission line falling
+between two samples of a coarse filter table is integrated, not skipped
+(v10.2). In spectroscopy the same integral is evaluated per resolution
+element by cumulative integration (Sect.~\ref{sec:binint}).
+
+Coverage policy: on the \emph{calibration} side (the reference band that
+sets the flux scale) full coverage is a hard requirement, because a
+truncated calibration integral silently rescales the whole spectrum. On
+the \emph{observing} side (QE, observing filter, template beyond its
+range) missing coverage is zero-filled: truncation there only loses
+counts, and both engines apply the same rule.

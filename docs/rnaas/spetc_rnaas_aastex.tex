@@ -1,0 +1,122 @@
+% Research Notes of the AAS — submission-ready AASTeX source.
+% Compile at the AAS submission system or anywhere aastex631.cls is
+% installed:  pdflatex spetc_rnaas_aastex.tex  (x2) + bibtex.
+% A preprint-style rendering compiled with the article class is provided
+% alongside as main.tex / main.pdf for immediate viewing.
+\documentclass[RNAAS]{aastex631}
+
+\usepackage{graphicx}
+\usepackage{amsmath}
+
+\shorttitle{SPETC: an exposure time calculator for small telescopes}
+\shortauthors{Barbieri}
+
+\begin{document}
+
+\title{SPETC: An Open-Source Spectro-Photometric Exposure Time Calculator
+for Small Telescopes and Amateur Instrumentation}
+
+\author[0000-0000-0000-0000]{Mauro Barbieri}
+\affiliation{Independent researcher}
+\email{mauro.barbieri@pm.me}
+
+\keywords{Astronomy software (1855) --- Observational astronomy (1145) ---
+CCD photometry (208) --- Spectroscopy (1558) --- Amateur astronomy (35)}
+
+\begin{abstract}
+SPETC is an open-source, offline exposure time calculator for ground-based
+broad-band photometry and slit or slitless spectroscopy, aimed at the
+instrumentation actually used on small telescopes: CMOS cameras with
+gain-dependent read noise, one-shot-colour sensors, classical slit
+spectrographs, and Star Analyser transmission gratings. It couples
+CALSPEC-calibrated template spectra and SVO-convention synthetic photometry
+to a position- and time-dependent sky model (airglow, zodiacal light,
+starlight, Krisciunas--Schaefer moonlight, twilight), a complete noise
+budget including scintillation and sky-subtraction noise, and per-night
+planning tracks with refraction-corrected airmass and parallactic angle.
+Every relation is documented, unit-tested, and inverted in closed form for
+target-S/N planning.
+\end{abstract}
+
+\section{Motivation}
+
+Exposure time calculators are standard infrastructure at professional
+observatories, but each is bound to its facility, and the generic
+alternatives model idealized instruments. The communities producing a
+growing share of time-domain follow-up --- variable-star and exoplanet
+photometrists, Be-star and nova spectroscopists on sub-metre telescopes ---
+plan observations with rules of thumb, although their regime is the one
+where honest error budgets matter most: bright stars are
+scintillation-limited, urban skies are background-limited, and slitless
+gratings are sky-limited in a way slit intuition does not predict. SPETC
+(Spectro-Photometric Exposure Time Calculator) addresses exactly this
+regime. It descends from a 2007 Fortran chain, rewritten in Python on
+\texttt{astropy} \citep{astropy2022}, and runs fully offline as a desktop
+application, a headless batch tool, and an importable library.
+
+\section{Physics}
+
+Templates are absolutely calibrated CALSPEC/BPGS spectrophotometry
+\citep{bohlin2014}, rescaled to the user's magnitude in any reference
+filter through SVO-convention synthetic photometry \citep{rodrigo2020}
+with photon or energy weighting, and optionally transformed by a radial
+velocity and CCM89 reddening \citep{cardelli1989}. The sky model is
+position- and time-dependent: van Rhijn airglow attenuated along the
+slant path, zodiacal light as a function of ecliptic latitude and solar
+elongation, integrated starlight, \citet{krisciunas1991} moonlight with
+the lunar distance factor, and a twilight/daylight bridge on the
+geometric solar altitude. Airmass follows \citet{pickering2002} on
+refracted apparent altitudes; atmospheric dispersion follows
+\citet{filippenko1982} and feeds worst-case slit losses whenever the slit
+is not at the parallactic angle, which the planning track reports per
+time sample. Point-spread functions are Gaussian or Moffat with analytic
+encircled-energy and slit couplings (the Moffat marginal is a Student-$t$
+distribution, so no profile is ever numerically integrated), with
+optional Kolmogorov seeing scaling in wavelength and airmass and a
+guiding-blur term. The noise budget is the CCD equation extended with
+scintillation \citep{young1967,osborn2015}, ADC quantization, dark, an
+extra-background term, and the \citet{merline1995} sky-subtraction
+factor; because the scintillation variance is linear in time, the
+target-S/N inversion and a stack planner (frames $\times$ sub-exposure,
+read-noise penalty, sky-limited frame length) remain closed-form even
+for scintillation-limited stars. Spectroscopic counts are exact per-resel
+integrals of the template --- narrow-line fluxes are invariant under the
+chosen resolving power --- and each output row carries the
+\citet{cayrel1988} equivalent-width uncertainty. Slitless mode implements
+Star Analyser physics: dispersion from groove density and grating-sensor
+distance, seeing-limited resolution, and the full-bandpass sky background
+that every pixel of a slitless spectrum receives, the dominant and often
+overlooked term. Figure~\ref{fig:budget} shows the resulting behaviour
+for a representative 358-mm configuration.
+
+\section{Implementation and availability}
+
+SPETC provides a Tkinter desktop interface with whole-night planning
+plots, a JSON-driven batch mode producing CSV and HTML summaries, tools
+to import CALSPEC/STScI FITS spectra as templates and to convert measured
+filter transmissions into fully annotated SVO-format profiles, CMOS
+gain-table support, SQM/Bortle sky input, differential-photometry
+precision in mmag, and a terrain-horizon generator based on the
+Copernicus GLO-30 elevation model. All physics is regression-tested
+(70+ tests), documented in a derivation-level manual, and was subjected
+to a full internal physics audit whose findings --- including the
+slitless sky term and the resolution-invariance requirement --- are
+implemented and tested. The code, documentation and audit are available
+under an open-source license in the project repository.
+
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.7\textwidth]{figures/fig_06_snr_budget.png}
+\caption{Broad-band signal-to-noise in 60 s versus target magnitude for a
+358-mm telescope, computed by the released code. The full budget (solid)
+saturates at the scintillation ceiling near $\mathrm{S/N} \simeq 1.2
+\times 10^{3}$; a Poisson-only model (dashed) overestimates bright-star
+performance by more than an order of magnitude --- the central planning
+error SPETC is designed to prevent.}
+\label{fig:budget}
+\end{figure}
+
+\bibliography{references}
+\bibliographystyle{aasjournal}
+
+\end{document}

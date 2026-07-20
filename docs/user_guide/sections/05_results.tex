@@ -1,4 +1,5 @@
 \section{Results, plots and export}
+\label{sec:results}
 
 \subsection{The Results window}
 
@@ -6,7 +7,13 @@ Three tabs:
 \begin{itemize}
   \item \textbf{Selected-time result}: the numerical table for the chosen
         time (magnitude row in photometry; per-wavelength rows in
-        spectroscopy).
+        spectroscopy), showing \emph{every} quantity the engine produced:
+        rates, S/N, $\sigma$(EW) [m\AA] for spectroscopy, the
+        scintillation and ADC-quantization noise in electrons, pixels in
+        the aperture, peak electrons/ADU, saturation cause, maximum
+        unsaturated exposure, the standard and instrumental magnitudes and
+        the sky brightness used. \textsf{Save result CSV} exports the full
+        table.
   \item \textbf{Time series}: one row per time sample with UTC and local
         time, MJD, elevation, azimuth, \textbf{parallactic angle}, airmass
         (Pickering, refraction-corrected), S/N or required exposure,
@@ -15,11 +22,17 @@ Three tabs:
         absorption-adjusted apparent magnitude, saturation flag, peak
         electrons and maximum unsaturated exposure. This table is the CSV
         export.
-  \item \textbf{Assumptions / visibility}: a plain-language statement of
+  \item \textbf{Assumptions / outputs}: a plain-language statement of
         every physical assumption of the current run --- sky model and its
-        components, PSF model, noise terms, saturation policy --- plus the
+        components (including the SQM value in \code{sqm} mode), PSF
+        model, the CMOS gain-table setting in use, the spectrograph
+        geometry, noise terms, saturation policy --- plus the
         selected-time altitude, airmass, parallactic angle and sky
-        brightness.
+        brightness, followed by a \textbf{SELECTED-TIME OUTPUTS} block:
+        S/N, scintillation noise in electrons and as a percentage of the
+        source, ADC noise, peak-pixel and saturation numbers, predicted
+        magnitudes, the $\sigma$(EW) line criterion, the stack plan and
+        the differential-photometry precision.
 \end{itemize}
 
 \subsection{Scientific plots}

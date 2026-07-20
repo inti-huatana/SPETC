@@ -3,45 +3,119 @@
 
 \subsection{Slit spectroscopy}
 
-\begin{enumerate}
-  \item Mode \code{slit}; set the resolving power $R$ (or load a measured
-        slit-width/$R$ curve, which then overrides it), the slit width and
-        the extraction height in arcsec, and pixels per resolution element.
-  \item Set the wavelength range and the S/N reference wavelength: the
-        time-series evaluates that wavelength bin at every time sample.
-  \item Choose the \textbf{slit orientation}. \code{parallactic} assumes
-        you rotate the slit to the parallactic angle (reported in the
-        Results window for every time), avoiding atmospheric-dispersion
-        losses. \code{fixed} applies the worst-case per-wavelength loss ---
-        expect tens of per cent missing at the blue end at airmass 1.5--2.
-  \item Run. The plot window shows the detected source rate and S/N per
-        resolution element, with a manual time slider through the night.
-\end{enumerate}
+\textbf{Step 1 — establish the resolving power.} Everything in a
+spectroscopic prediction hangs on the resolving power
+$R = \lambda/\Delta\lambda$, because it fixes how the light is divided
+among resolution elements. You have three ways to supply it, in
+increasing order of fidelity. If you know $R$ from your spectrograph's
+documentation, type it into \textsf{Slit resolving power R} and you are
+done. If you know your \emph{hardware} instead --- most amateurs do ---
+fill the three geometry fields (grating grooves per mm, collimator focal
+length, camera focal length) and press \textsf{Compute R from geometry}:
+the program combines them with the telescope focal length, your slit
+width and the seeing through the grating equation, fills the R field,
+and tells you whether the resolution is limited by the slit or by the
+seeing --- if it says ``seeing-limited'', a narrower slit would only lose
+light without sharpening the spectrum. Finally, if you have a
+\emph{measured} $R$-versus-slit-width curve for your instrument, load it
+in the telescope column and it silently overrides the nominal value
+within its calibrated range.
+
+\textbf{Step 2 — describe the extraction.} The slit width (arcsec)
+controls how much starlight enters; the extraction height (arcsec) is
+the length along the slit that your reduction software will sum over.
+Both cost and gain: a wide slit and tall extraction capture more of the
+seeing-blurred star but admit proportionally more sky, and the ETC
+accounts for both directions exactly, using the PSF model you selected.
+\textsf{Pixels per resolution element} is your detector sampling
+(typically 2--3); it fixes how many pixels' worth of read noise each
+spectral bin carries.
+
+\textbf{Step 3 — decide the slit orientation.} Atmospheric refraction
+disperses every star into a tiny vertical spectrum: at airmass 1.5 the
+blue image at 4000\,\AA{} sits about $1''$ from the red image at
+6600\,\AA{}. If your slit is aligned with that vertical direction ---
+the \emph{parallactic angle}, reported for every time sample in the
+Results window --- all images fall along the slit and nothing is lost.
+If the slit sits at any other angle, the blue and red images drift out
+of it sideways. Choose \code{parallactic} if you rotate your slit during
+the night (or observe near the meridian, where the effect vanishes);
+choose \code{fixed} if your slit angle is fixed, and the program will
+charge the worst-case wavelength-dependent loss --- tens of percent at
+the blue end at airmass 1.5--2, exactly the classical Filippenko effect.
+Comparing a run in each mode shows you precisely what slit rotation
+would buy.
+
+\textbf{Step 4 — set the wavelength range and reference.} The range
+(min/max, \AA{}) is the span the spectrum table will cover; the
+\textsf{S/N reference wavelength} is the single wavelength at which the
+time-series curve and the stack plan are evaluated --- put it where your
+science is (H$\alpha$ at 6563 for emission-line work, 5500 for general
+use).
+
+\textbf{Step 5 — run and read.} The plot window adds two spectral
+panels: the detected source rate and the S/N, both \emph{per resolution
+element}, with a manual time slider that recomputes the whole spectrum
+at other times of the night. The Results table gives the full
+wavelength-by-wavelength budget (Sect.~\ref{sec:results}).
 
 \subsection{Slitless spectroscopy and the Star Analyser}
 
-Mode \code{slitless}. Two ways to describe the disperser:
+In slitless spectroscopy there is no slit: every star in the field is
+dispersed directly, resolution is set by the seeing rather than by a slit,
+and no slit losses occur --- which is why a Star Analyser on a modest
+telescope reaches surprisingly bright-looking spectra, at the price of
+low resolution and of sky light entering at every wavelength.
 
-\begin{itemize}
-  \item \textbf{Star Analyser 100/200 (recommended)}: enter the groove
-        density (100 or 200 lines/mm) and the grating-to-sensor distance in
-        mm; the dispersion in \si{\angstrom}/pixel follows from the
-        physics (an SA100 at \SI{42}{mm} on \SI{4.63}{\micro\metre} pixels
-        gives $\simeq11$ \si{\angstrom}/pixel). Optionally set the
-        first-order grating efficiency ($\sim0.5$ is realistic).
-  \item \textbf{Manual}: leave the groove density at 0 and type the
-        dispersion in \si{\angstrom}/pixel directly.
-\end{itemize}
+Mode \code{slitless} offers two ways to describe the disperser. For a
+\textbf{Star Analyser 100 or 200} (or any transmission grating in the
+converging beam), enter the groove density (100 or 200 lines/mm) and the
+distance from the grating to the sensor in millimetres --- for a filter-%
+wheel mounting this is roughly the wheel-to-sensor distance; measure it
+once. From these two numbers and your pixel size the program computes
+the dispersion itself: an SA100 at 42\,mm on 4.63\,\si{\micro\metre}
+pixels gives 11.0\,\AA/pixel, matching the published calibration. The
+optional grating efficiency (a realistic first-order value is
+$\sim$0.5) scales source and sky alike. Alternatively, leave the groove
+density at 0 and type a known dispersion in \AA/pixel directly.
 
-The resolution element is set by seeing, the intrinsic grating LSF and
-atmospheric dispersion; with $2$--$3''$ seeing expect $R\sim100$--200
-regardless of exposure. The cross-dispersion extraction height is the only
-aperture; there are no slit losses. Slitless results are flagged
-\emph{experimental} until validated on a calibrated instrument.
+The resolution element is computed from the seeing, the intrinsic
+grating blur and the atmospheric-dispersion smear combined; with
+$2$--$3''$ seeing expect $R \sim 100$--200, and note that longer
+exposures do \emph{not} sharpen it --- only better seeing or a longer
+grating distance do. The cross-dispersion extraction height plays the
+role the extraction height plays in slit mode.
 
-\subsection{Reading the spectroscopic output}
+One consequence of having no slit deserves emphasis, because it changes
+the numbers a lot: \textbf{every pixel of a slitless spectrum receives
+sky light from the entire bandpass}, not just from the small wavelength
+interval mapped to it (the dispersed image of a uniform sky is still
+uniform). The ETC accounts for this in full since v10.2 --- for a
+typical Star Analyser configuration the background is about a hundred
+times larger than a slit-style calculation would suggest. In practice:
+under a dark sky short exposures on bright targets work exactly as Star
+Analyser users know they do, but under a bright (moonlit or urban) sky
+the mode degrades much faster than a slit spectrograph, and the ETC now
+shows that honestly. Slitless results remain flagged
+\emph{experimental} until validated against a calibrated instrument;
+treat absolute count levels with one raised eyebrow and relative
+comparisons with confidence.
 
-All spectroscopic counts and S/N are \textbf{per resolution element}, not
-per pixel. The Results table lists, per wavelength: the element width, the
-effective $R$, source and sky rates, S/N, peak electrons and ADU of the
-brightest pixel, the saturation flag and the maximum unsaturated exposure.
+\subsection{Getting a science answer: S/N, $\sigma$(EW) and the stack plan}
+
+All spectroscopic counts and S/N are \textbf{per resolution element},
+not per pixel --- when comparing with other tools, check which
+convention they use, since the difference is a factor $\sqrt{N_{\rm
+pix}}$. Each result row also carries $\sigma$(EW), the equivalent-width
+uncertainty at that wavelength from the Cayrel relation, in
+milli-\AA{}ngstr\"om. This converts S/N into the language of actual
+measurements: a line is securely measurable when its expected
+equivalent width exceeds roughly $3\,\sigma$(EW). Concretely, with
+$\sigma$(EW) = 15\,m\AA{} at H$\alpha$, the 50--500\,m\AA{} emission
+variations of a Be star are easy science, a 100\,m\AA{} interstellar
+line is solid, and a 20\,m\AA{} photospheric line is out of reach ---
+one number, read directly from the table, settles what your night can
+and cannot do. The value at the reference wavelength is repeated in the
+label under PHOTOMETRY and in the outputs tab, and the stack planner
+works exactly as in photometry, applied to the reference resolution
+element.

@@ -226,6 +226,58 @@ H_PLANCK = 6.62606876e-27
 C_LIGHT = 2.99792458e10
 
 
+# FITS spectral tables: accepted column names and wavelength units.  This is
+# the STScI convention shared by CALSPEC, the solar-system surface-brightness
+# atlas, the galactic emission-line atlas, the transient (SN/kilonova)
+# templates and the CLOUDY planetary-nebula grids: a binary table with
+# WAVELENGTH [Angstrom] and FLUX [erg/s/cm^2/A] columns.
+_FITS_WAVELENGTH_COLUMNS = ("wavelength", "wave", "lambda", "wavelength_air", "wl")
+_FITS_FLUX_COLUMNS = ("flux", "flam", "surf_bright", "surface_brightness", "sb")
+_FITS_WAVELENGTH_UNITS = {
+    "": 1.0, "angstrom": 1.0, "angstroms": 1.0, "a": 1.0,
+    "nm": 10.0, "nanometer": 10.0, "nanometers": 10.0,
+    "micron": 1.0e4, "microns": 1.0e4, "um": 1.0e4, "micrometer": 1.0e4, "micrometers": 1.0e4,
+}
+
+
+def load_fits_spectrum(path):
+    """Read a CALSPEC/STScI-style FITS spectral table as (wavelength_A, flux) rows.
+
+    Finds the first table HDU with a recognisable wavelength and flux column
+    (WAVELENGTH/FLUX and common variants, case-insensitive), converts the
+    wavelength unit from TUNIT when it is nm or micron, and returns an Nx2
+    float array.  Flux units are returned as stored (CALSPEC: FLAM =
+    erg/s/cm^2/A; the solar-system atlas: erg/s/cm^2/A/arcsec^2) - the ETC
+    rescales every template to the user-entered magnitude, so only the
+    spectral shape and the relative calibration matter.
+    """
+    from astropy.io import fits
+    path = Path(path)
+    with fits.open(path, memmap=False) as hdul:
+        for hdu in hdul:
+            data = getattr(hdu, "data", None)
+            if data is None or not getattr(data, "names", None):
+                continue
+            lookup = {str(name).strip().lower(): name for name in data.names}
+            wave_key = next((k for k in _FITS_WAVELENGTH_COLUMNS if k in lookup), None)
+            flux_key = next((k for k in _FITS_FLUX_COLUMNS if k in lookup), None)
+            if wave_key is None or flux_key is None:
+                continue
+            wavelength = np.asarray(data[lookup[wave_key]], dtype=float).ravel()
+            flux = np.asarray(data[lookup[flux_key]], dtype=float).ravel()
+            unit = ""
+            for index, name in enumerate(data.names, start=1):
+                if name == lookup[wave_key]:
+                    unit = str(hdu.header.get(f"TUNIT{index}", "")).strip().lower()
+            scale = _FITS_WAVELENGTH_UNITS.get(unit)
+            if scale is None:
+                raise ValueError(f"{path}: unsupported wavelength unit {unit!r} in TUNIT.")
+            return np.column_stack((wavelength * scale, flux))
+    raise ValueError(
+        f"{path} contains no table HDU with recognisable wavelength/flux columns "
+        f"(accepted: {', '.join(_FITS_WAVELENGTH_COLUMNS)} / {', '.join(_FITS_FLUX_COLUMNS)}).")
+
+
 def load_star_spectrum(record, data_dir):
     """
     Load the calibrated spectrum for a catalogue entry.
@@ -233,6 +285,9 @@ def load_star_spectrum(record, data_dir):
     The returned values retain the file's flux scale.  ``record.mv0`` is
     consumed later by the ETC to convert the distribution to visual zero and
     then to the user-entered reference magnitude.
+
+    Two-column ASCII and CALSPEC/STScI-style FITS tables are supported; the
+    format is chosen by the file extension (.fits/.fit).
 
     No file dialog is used: the spectrum file is located automatically
     from record.filename under data_dir (subdirectories supported).
@@ -246,30 +301,39 @@ def load_star_spectrum(record, data_dir):
             f"(referenced by interpola.db as '{record.filename}')"
         )
 
-    rows = []
-    with open(spec_path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            tokens = line.split()
-            if len(tokens) < 2:
-                continue
-            wl = float(tokens[0])
-            flux = float(tokens[1])
-            if np.isfinite(wl) and np.isfinite(flux) and wl > 0 and flux > 0:
-                rows.append((wl, flux))
+    if spec_path.suffix.lower() in (".fits", ".fit"):
+        raw = load_fits_spectrum(spec_path)
+        good = (np.isfinite(raw[:, 0]) & np.isfinite(raw[:, 1])
+                & (raw[:, 0] > 0) & (raw[:, 1] > 0))
+        rows = raw[good]
+        if rows.size == 0:
+            raise ValueError(f"No valid (wavelength, flux>0) rows found in {spec_path}")
+        spectrum = np.asarray(rows, dtype=float)
+    else:
+        rows = []
+        with open(spec_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                tokens = line.split()
+                if len(tokens) < 2:
+                    continue
+                wl = float(tokens[0])
+                flux = float(tokens[1])
+                if np.isfinite(wl) and np.isfinite(flux) and wl > 0 and flux > 0:
+                    rows.append((wl, flux))
 
-    if not rows:
-        raise ValueError(f"No valid (wavelength, flux>0) rows found in {spec_path}")
+        if not rows:
+            raise ValueError(f"No valid (wavelength, flux>0) rows found in {spec_path}")
 
-    spectrum = np.asarray(rows, dtype=float)
+        spectrum = np.asarray(rows, dtype=float)
     spectrum = spectrum[np.argsort(spectrum[:, 0])]
     keep = np.r_[True, np.diff(spectrum[:, 0]) > 0]
     spectrum = spectrum[keep]
     if len(spectrum) < 2:
         raise ValueError(f"Spectrum for '{record.name}' has fewer than two distinct wavelengths: {spec_path}")
-    if record.nrow > 0 and abs(len(spectrum) - record.nrow) > 1:
-        # Header/comment rows are common, hence this is intentionally only a diagnostic.
-        print(f"Warning: {record.name} declares {record.nrow} rows but {len(spectrum)} usable rows were loaded.")
+    # A declared/loaded row-count mismatch is normal (header and comment rows,
+    # duplicate wavelengths removed above) and not actionable, so it is not
+    # reported.
     return spectrum

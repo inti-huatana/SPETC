@@ -1,48 +1,106 @@
 \section{Modification recipes}
+\label{sec:extending}
+
+Each recipe names every file to touch, in order, and ends with the test
+obligation. The general pattern is always the same: implement the physics
+as a pure function in the right layer, thread it through the engine(s),
+expose it in the GUI with a persisted variable, and pin it with a test.
 
 \subsection{Add a filter}
-Download the \code{\_Vega} and \code{\_AB} VOTables from the SVO Filter
-Profile Service, drop them into \code{data/filters/} and append the two
-names to \code{data/filters.list}. Nothing else: the selector list is
-rebuilt at start-up and all metadata (zero point, pivot, detector type)
-comes from the files.
 
-\subsection{Add a template spectrum}
-Place the two-column ASCII under \code{data/} and append a row to
-\code{interpola.db.csv} with its row count, the visual magnitude the file
-is calibrated to ($m_{v0}$; 0 for a visual-zero distribution), $B-V$, name,
-spectral type and relative path.
+\emph{Files touched: \code{data/filters.list}, \code{data/filters/}.}
+For a filter that exists in the SVO Filter Profile Service, download the
+VOTable of \emph{both} calibrations (the Vega page and the AB page of the
+same filter), save them as \code{<System.Band>\_Vega.xml} and
+\code{<System.Band>\_AB.xml} in \code{data/filters/}, and append the two
+names to \code{data/filters.list}. No code changes: the selector is
+rebuilt from the list at start-up and every number the program needs
+(zero point, detector type, pivot, transmission) is inside the files.
+For a filter SVO does not carry, produce the pair from a transmission
+curve with \code{make\_filter\_profile.py} --- it prints the exact lines
+to append. If the program refuses a profile, the parser's error message
+names the missing \code{PARAM}; the four required ones are
+\code{MagSys}, \code{ZeroPoint} (+\code{ZeroPointUnit} \code{Jy}),
+\code{DetectorType} and \code{WavelengthUnit}.
 
-\subsection{Add a site}
-Prefer the GUI (\textsf{Save current site}); or edit
-\code{etc\_sites.json}. \code{observatories.json} is for shipped defaults
-only.
+\subsection{Add template spectra}
+
+\emph{Files touched: \code{data/}, \code{data/interpola.db.csv} --- both
+via the tool.} Run \code{python3 add\_template.py <file-or-directory>}.
+The tool computes the one non-obvious catalogue field, $m_{v0}$ (the
+synthetic Vega $V$ magnitude of the file --- get this wrong and every
+prediction from that template is off by the same amount), writes the
+row, and copies the file. Do it by hand only when you understand the
+$m_{v0}$ convention (User Guide Sect.~6.1). To \emph{remove} a template,
+delete its catalogue line; the spectrum file may stay.
+
+\subsection{Add an observing site}
+
+Use \textsf{Save current site} in the GUI, which writes
+\code{etc\_sites.json}; or edit that JSON directly (schema in the User
+Guide Sect.~6.7). \code{observatories.json} is the shipped default set:
+add there only sites that should reach every user of a release.
 
 \subsection{Add a noise term}
-Implement the variance in \code{observing\_conditions.py} as a pure
-function returning e$^{-2}$; add it to the \code{extra\_variance\_e2} sums
-in \code{photometry.py} and \code{spectroscopy.py}; expose any new inputs
-through \code{\_atmosphere\_dict} in the GUI; extend
-\code{tests/test\_spectral\_pipeline.py} with an order-of-magnitude check;
-document it in the physics document's Table~3.
+
+\emph{Files touched: \code{observing\_conditions.py},
+\code{photometry.py}, \code{spectroscopy.py}, possibly
+\code{solvers.py}, \code{etc\_gui.py}, \code{tests/}.} Write the term as
+a pure function returning a \emph{variance in e$^{-2}$} given rates and
+conditions, with the reference in the docstring. In
+\code{photometry.compute\_photometry\_single} and in the S/N line of
+\code{spectroscopy.compute\_spectroscopy}, add it to the
+\code{extra\_variance} sums (grep for \code{scintillation\_var} to find
+both spots). Ask the one question that decides solver integration: is
+the variance linear in exposure time? If yes (like scintillation), also
+add its rate to the \code{extra\_variance\_rate\_e2\_s} arguments of
+\code{exposure\_time\_for\_snr} and \code{plan\_stack} at the call sites
+in \code{etc\_gui.py} and \code{spetc\_batch.py}, or target-S/N mode
+will silently ignore it. If it needs a new user input, register the Tk
+variable with \code{self.\_var("key", default)} (persistence is then
+automatic) and pass it through \code{\_atmosphere\_dict}. Finish with a
+regression test pinned to a published magnitude of the effect and a line
+in the physics document's noise table.
 
 \subsection{Add a PSF model}
-Extend \code{psf\_encircled\_energy} and \code{psf\_slit\_throughput} in
-\code{etc\_physics.py} with the new \code{psf\_model} branch (the slit
-coupling needs the 1-D marginal CDF, analytic or numeric), add the name to
-the GUI combobox, and add a regression test comparing it against the
-Gaussian in a limit.
 
-\subsection{Change the sky model}
-All component physics lives in \code{sky\_brightness.py}; the
-normalization/blending policy in \code{sky\_background.py}; the GUI merge
-in \code{\_sky\_models\_for\_track}. A future spectral sky model should
-populate the existing \code{spectral\_sky\_f\_lambda} key of the sky-model
-dictionary --- the spectroscopy engine already consumes it.
+\emph{Files touched: \code{etc\_physics.py}, \code{etc\_gui.py},
+\code{tests/}.} Add a branch to \code{psf\_encircled\_energy} (circular
+integral) and \code{psf\_slit\_throughput} (the 1-D marginal CDF,
+analytic if you can find it --- the Moffat case shows the pattern with
+the Student-$t$ --- numeric otherwise; keep the \code{offset\_arcsec}
+argument vectorised, the dispersion-loss code calls it with arrays).
+Add the model name to the GUI combobox. Both engines pick it up
+automatically because they read \code{psf\_model} from the atmosphere
+dictionary. Test it against the Gaussian in a limiting case.
 
-\subsection{Coding rules}
-Match the existing style: physics as pure functions with explicit units,
-engines free of Tk, no silent fallbacks (raise \code{ValueError} with the
-offending numbers), constants named after their paper, and every new
-physical relation cited to its reference in a docstring and covered by a
-test pinned to a published value.
+\subsection{Change or extend the sky model}
+
+Component physics (a better zodiacal model, a site-specific airglow
+coefficient) belongs in \code{sky\_brightness.py}; \emph{when} each
+component sets the level belongs in \code{sky\_background.py}; how the
+per-time dictionaries are assembled for the engines is
+\code{\_sky\_models\_for\_track} in the GUI. A future fully spectral sky
+model has a ready-made slot: put a curve under the
+\code{spectral\_sky\_f\_lambda} key of the sky-model dictionary and the
+spectroscopy engine uses it as-is, bypassing the broad-band colour
+machinery.
+
+\subsection{Add a GUI control}
+
+Register the variable (\code{self.\_var}), place the widget in the right
+column builder (\code{\_build\_*\_column}), consume the value in
+\code{\_run\_etc} or a helper, and --- if the physics sees it --- extend
+the run-parameters log in \code{\_show\_info} so the assumption is
+visible in the output record. Never put computation in the GUI: compute
+in an engine or module function and call it.
+
+\subsection{Add an output quantity}
+
+Compute it in the engine and put it in the result dict / DataFrame ---
+it then reaches the result CSV automatically. To show it in the results
+table, add a \code{(key, heading)} pair to
+\code{ETCGUI.\_RESULT\_COLUMNS}; to show it per time sample, add a
+column in \code{\_build\_time\_series\_dataframe}; to show it in the log,
+add a line to the \code{\_append\_info\_outputs} call. Document it in
+the README output table and the User Guide.

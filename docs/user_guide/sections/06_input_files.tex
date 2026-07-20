@@ -1,0 +1,279 @@
+\section{Input file formats, in full}
+\label{sec:input-files}
+
+Everything the program reads is a plain text, JSON, XML or FITS file that
+you can inspect and produce yourself. This section specifies each format
+completely: the exact columns, their units, the parsing rules, and a
+literal example you can copy. Blank lines are ignored everywhere; lines
+beginning with \code{\#} are comments where noted.
+
+\subsection{The template catalogue: \code{data/interpola.db.csv}}
+\label{sec:file-catalog}
+
+This comma-separated file is the master list of stellar templates; the
+template selector in the GUI is built from it. The first line is a header
+and is skipped. Every following line describes one template with exactly
+six fields:
+
+\begin{center}
+\begin{tabular}{clp{8.6cm}}
+\toprule
+\# & Field & Meaning \\
+\midrule
+1 & \code{nrow} & Integer: the number of data rows in the spectrum file.
+    Used only as a consistency check at load time (a mismatch larger than
+    one row prints a warning, nothing more), so an approximate value is
+    acceptable. \\
+2 & \code{Vmag} & Float: the \emph{visual magnitude that the spectrum file
+    represents}, called $m_{v0}$ throughout the documentation. This is the
+    heart of the calibration: the ETC multiplies the file by
+    $10^{0.4\,m_{v0}}$ to bring it to the ``visual zero'' scale and then
+    scales it to the magnitude you enter in the GUI. For an absolutely
+    calibrated file (CALSPEC), $m_{v0}$ is simply the synthetic $V$
+    magnitude of the file itself: $0.026$ for Vega, $-26.75$ for the Sun.
+    For the BPGS library the files are already normalised to visual zero,
+    hence $m_{v0}=0$. If this number is wrong, every prediction for that
+    template is wrong by the same factor --- when in doubt, let
+    \code{add\_template.py} compute it (Sect.~\ref{sec:tool-template}). \\
+3 & \code{B-V} & Float: the Johnson $B{-}V$ colour of the template.
+    Informational: it is displayed in the selector and used by the
+    template-validation button, but it does not enter the flux
+    calibration. \\
+4 & \code{name} & The display name shown in the selector. Any text without
+    a comma; leading/trailing spaces are stripped. \\
+5 & \code{spt} & The spectral type (\code{A0V}, \code{G2V}, \code{M5III},
+    \dots). The search box of the selector matches against this field. \\
+6 & \code{filename} & Path of the spectrum file, \emph{relative to the
+    data directory}. Subdirectories are allowed and encouraged
+    (\code{bpgs/bpgs\_92.ascii}, \code{imported/hd12345.fits}). \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A literal excerpt:
+
+\begin{verbatim}
+nrow ,Vmag   ,B-V     ,name       ,spt   ,filename
+ 8839,  0.026,   0.000, Vega      ,   A0V, bpgs/alpha_lyr_stis_004.ascii
+ 1467,-26.750,   0.630, Sun       ,   G2V, bpgs/sun_reference_stis_001.ascii
+  481,  0.000,   0.310, HD 76483  ,   A3V, bpgs/bpgs_48.ascii
+\end{verbatim}
+
+Fields are separated by commas; the spaces you see are padding for human
+readability and are stripped on parsing. A line with fewer than six
+fields, or with non-numeric values in the numeric fields, is silently
+skipped --- a convenient way to comment a template out is therefore to
+put a letter in front of its \code{nrow}.
+
+\subsection{Template spectra}
+\label{sec:file-templates}
+
+Two formats are accepted, distinguished by the file extension.
+
+\paragraph{Two-column ASCII (any extension except \code{.fits}/\code{.fit}).}
+Each line holds a wavelength in \emph{\AA{}ngstr\"om} and a flux density
+$F_\lambda$ in \si{erg.s^{-1}.cm^{-2}.\angstrom^{-1}}, separated by
+whitespace:
+
+\begin{verbatim}
+ 3500.0  4.215e-09
+ 3502.5  4.198e-09
+ 3505.0  4.187e-09
+\end{verbatim}
+
+Parsing rules, all applied automatically at load: lines with fewer than
+two numeric tokens are skipped; rows with non-finite, zero or negative
+wavelength or flux are dropped; rows are sorted by wavelength; duplicate
+wavelengths are removed keeping the first occurrence. What matters
+physically is the \emph{shape}: because the ETC rescales the spectrum to
+the magnitude you enter (via $m_{v0}$, previous subsection), a template in
+arbitrary flux units is perfectly usable as long as the relative
+calibration across wavelength is correct.
+
+\paragraph{CALSPEC/STScI FITS tables (\code{.fits}, \code{.fit}).}
+The standard format of the STScI calibration archives: a FITS binary
+table with a wavelength column named \code{WAVELENGTH} (or \code{WAVE},
+\code{LAMBDA}, \code{WL}) and a flux column named \code{FLUX} (or
+\code{FLAM}, \code{SURF\_BRIGHT}, \code{SB}), matched case-insensitively.
+The wavelength unit is read from the column's \code{TUNIT} keyword and may
+be \AA{}ngstr\"om (the CALSPEC convention), nanometres or microns ---
+conversion is automatic. Additional columns (\code{STATERROR},
+\code{SYSERROR}, \code{FWHM}, \dots) are ignored. This one reader covers
+the CALSPEC standard-star archive, the solar-system surface-brightness
+atlas, the galactic emission-line atlas, the supernova/kilonova transient
+templates and the CLOUDY planetary-nebula grids without modification.
+
+\subsection{The filter list and profiles}
+\label{sec:file-filters}
+
+\paragraph{\code{data/filters.list}} names the available filters, one
+entry per line; \code{\#} comments allowed. Each \emph{logical} filter
+(say \code{Bessell.V}) requires two profile files, \code{Bessell.V\_Vega}
+and \code{Bessell.V\_AB}, holding the same transmission curve with the two
+photometric calibrations. Entries may be written with or without the
+\code{filters/} prefix and with or without the \code{.xml} extension ---
+all four combinations resolve. Example:
+
+\begin{verbatim}
+filters/Bessell.V_Vega
+filters/Bessell.V_AB
+filters/SDSS.r_Vega
+filters/SDSS.r_AB
+\end{verbatim}
+
+\paragraph{Profile files (\code{data/filters/*.xml})} are VOTables in the
+SVO Filter Profile Service format. If you download a filter from SVO
+(\url{http://svo2.cab.inta-csic.es/theory/fps/}), take the ``VOTable''
+link of the desired calibration and drop the file in unchanged. The
+parser requires four \code{PARAM} elements --- \code{MagSys} (\code{Vega}
+or \code{AB}), \code{ZeroPoint} with \code{ZeroPointUnit} \code{Jy},
+\code{DetectorType} (0 = energy counter, 1 = photon counter) and
+\code{WavelengthUnit} --- plus the transmission table itself as
+\code{TR}/\code{TD} rows of wavelength and transmission. All other
+metadata (pivot wavelength, FWHM, effective width, \dots) is read when
+present and shown in the filter panel. For a filter that SVO does not
+carry --- every amateur RGB or narrowband filter --- build the pair with
+\code{make\_filter\_profile.py} from a plain transmission curve
+(Sect.~\ref{sec:tool-filter}); the generated files contain everything
+listed above.
+
+\paragraph{\code{BLANK.xml}} is the special ``no filter'' profile: unity
+transmission from 3000 to 26000\,\AA{}. Because an unfiltered measurement
+has no meaningful Vega calibration, it is defined on the AB scale for
+both selector positions. Spectroscopy selects it by default.
+
+\subsection{Detector and instrument curves}
+\label{sec:file-curves}
+
+Four optional two-column text files describe your instrument beyond the
+scalar numbers in the GUI. All four share the same syntax: whitespace- or
+comma-separated columns, \code{\#} comments, and a wavelength unit that
+you declare in the GUI (\AA{}ngstr\"om, nm or \si{\micro\metre}) rather
+than in the file --- so a curve digitized from a datasheet in nanometres
+is used as-is by setting the unit selector to \code{nm}.
+
+\begin{description}
+\item[QE curve (\code{data/qe.dat} or per-profile).] Wavelength and
+  quantum efficiency as a \emph{fraction} (0--1):
+\begin{verbatim}
+# ASI533MM  wavelength[nm]  QE
+ 400  0.62
+ 500  0.80
+ 600  0.72
+ 700  0.52
+\end{verbatim}
+  Values are clipped to [0, 1]; outside the tabulated range the QE is
+  taken as zero, which is physically right for a sensor cut-off. For an
+  OSC camera in single-channel mode, this file should be the
+  \emph{channel's} effective QE: sensor QE multiplied by the colour-dye
+  transmission of that channel, both published by the camera makers.
+\item[Optics response curve (optional).] Same syntax; the wavelength-%
+  dependent throughput of everything between aperture and detector
+  \emph{excluding} the QE and the filter (mirror reflectivity, corrector
+  and window transmission, \dots). It multiplies the scalar efficiency
+  from the GUI. If you have only the scalar, leave this file out.
+\item[Slit resolving-power curve (optional).] Two columns: slit width in
+  arcsec, measured resolving power $R$. When loaded, the measured curve
+  overrides the nominal $R$ for slit widths inside its range; a width
+  outside the range is refused rather than extrapolated.
+\item[CMOS gain table (optional).] Four columns: gain \emph{setting} (the
+  number you dial into the camera driver), conversion gain in
+  e$^-$/ADU, read noise in e$^-$ rms, full-well capacity in e$^-$:
+\begin{verbatim}
+# ASI533MM: setting  e/ADU   RN    FWC
+     0      3.64    3.55   50000
+   100      1.00    1.45   13700
+   200      0.32    1.20    4400
+\end{verbatim}
+  Selecting a row in the GUI fills the three detector fields together, so
+  gain, noise and saturation always describe the same camera state. The
+  numbers come from the maker's published curves or from
+  PhotonsToPhotos.
+\end{description}
+
+\subsection{The atmospheric transmission FITS file}
+
+\code{data/earth\_atmospheric\_transmission.fits}, if present, replaces
+the built-in broad-band extinction table with a measured curve. Three
+layouts are accepted: a binary table with a wavelength column
+(\code{WAVEAIR}, \code{WAVELENGTH}, \code{WAVE}, \code{LAMBDA},
+\code{LAM} or \code{WL}) and a direct transmission column
+(\code{TRANSMISSION}, \code{TRANS}, \code{THROUGHPUT}) holding fractions;
+the same with an \code{EXTINCTION} column in mag/airmass (the Paranal
+product), converted internally as $T = 10^{-0.4 k_\lambda}$; or a plain
+$2\times N$ image whose wavelength unit is declared by \code{CUNIT1}.
+Whatever the source, the file must state \emph{zenith} values: the ETC
+raises the curve to the current airmass itself, exactly once. Outside the
+file's wavelength range the edge values are extended (an atmosphere does
+not become opaque where a file ends).
+
+\subsection{Sites: \code{etc\_sites.json} and \code{observatories.json}}
+
+Your personal site list is a JSON file next to the program:
+
+\begin{verbatim}
+{ "schema_version": 1,
+  "sites": [
+    { "name": "My backyard", "lat": 45.4064, "lon": 11.8768,
+      "elev": 12, "utc_offset_h": 1, "timezone": "Europe/Rome",
+      "sky_ab_mag_arcsec2": 19.8 } ] }
+\end{verbatim}
+
+\code{lat}/\code{lon} are decimal degrees (north and east positive),
+\code{elev} metres, \code{sky\_ab\_mag\_arcsec2} the default value for the
+fixed-sky mode. You rarely edit this file by hand: \textsf{Save current
+site} writes the entry for you, and \textsf{Import site file} merges
+another user's file into yours. \code{observatories.json} holds the
+shipped defaults in a simpler flat format and is not meant to be edited.
+
+\subsection{Instrument profiles}
+\label{sec:profiles}
+
+\textsf{Save instrument profile} writes a JSON file containing every
+telescope/detector/spectroscopy setting of the middle columns, and copies
+the currently loaded QE, optics-response and slit-$R$ curves beside it as
+\code{<profile>\_qe.dat}, \code{<profile>\_throughput.dat} and
+\code{<profile>\_slitres.dat}, referenced by relative name --- the set of
+files is portable as a folder. Loading a profile restores everything,
+including the curves; the most recently used profile is reloaded
+automatically at start-up. This is the mechanism to maintain one
+configuration per telescope+camera combination you own.
+
+\subsection{Horizon profile CSV}
+\label{sec:file-horizon}
+
+Written automatically by the horizon generator into
+\code{data/horizons/horizon\_lat<lat>\_lon<lon>\_r<km>km.csv}; readable by
+any plotting tool and by \textsf{Display horizon}. A commented header
+records the site, then one row per azimuth:
+
+\begin{verbatim}
+# SPETC horizon profile
+# latitude_deg: 45.848600
+# longitude_deg: 11.569600
+# radius_km: 10
+# center_elevation_m: 1366.0
+azimuth_deg,horizon_elevation_deg
+0.0,1.234
+1.0,1.198
+\end{verbatim}
+
+Azimuth is degrees from North through East (N=0, E=90 --- the same
+convention as every other azimuth in the program); the horizon elevation
+is the apparent altitude of the terrain in degrees, including the
+Earth-curvature drop and the standard $34'$ horizontal refraction, so a
+target is genuinely visible when its computed altitude exceeds the
+profile value at its azimuth.
+
+\subsection{Batch run descriptions}
+
+The headless mode (Sect.~\ref{sec:tool-batch}) is driven by a JSON file
+whose blocks mirror the GUI columns: \code{telescope} (mm and scalar
+efficiency), \code{detector} (the \code{Detector} constructor fields),
+\code{atmosphere} (airmass, seeing, PSF model, elevation),
+\code{sky} (\code{"mode": "fixed\_ab"} with \code{sky\_mag}, or
+\code{"mode": "sqm"} with \code{sqm\_v\_mag\_arcsec2}), \code{target}
+(template name from the catalogue, magnitude, system, reference filter),
+and a \code{photometry} or \code{spectroscopy} block with the
+mode-specific settings. The two shipped examples in \code{examples/} are
+complete and commented by construction --- copy one and edit the numbers.

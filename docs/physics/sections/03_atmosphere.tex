@@ -1,6 +1,19 @@
 \section{Atmosphere}
 \label{sec:atmosphere}
 
+The atmosphere acts on a ground-based measurement in four physically
+distinct ways, and \spetc{} models each separately: it \emph{absorbs and
+scatters} light out of the beam (extinction), it \emph{bends} the beam
+(refraction, which changes the apparent altitude and, through its
+wavelength dependence, disperses the image into a tiny vertical
+spectrum), it \emph{blurs} the image (seeing, treated in
+Sect.~\ref{sec:psf}), and it \emph{modulates} the total received flux on
+millisecond timescales (scintillation). Confusing these roles is the
+commonest source of error in home-made exposure calculators --- e.g.\
+applying an extinction correction twice, or ignoring scintillation
+because ``the photon noise is already counted''. This section fixes the
+conventions for each.
+
 \subsection{Extinction}
 
 Zenith transmission $T_{\rm atm}(\lambda)$ comes either from a
@@ -10,6 +23,44 @@ $T=10^{-0.4k_\lambda}$) or from the built-in broad-band $U$--$K$ table
 (Table~\ref{tab:sky}). The Bouguer law applies it as $T^{X}$, exactly once,
 to the source; observed sky brightnesses are never extinguished a second
 time.
+
+\subsection{Telluric molecular bands}
+\label{sec:telluric}
+
+A smooth extinction curve describes Rayleigh scattering, aerosols and
+ozone, but not the discrete molecular absorption \emph{bands} of O$_2$ and
+H$_2$O that structure the red and near-infrared: the O$_2$ B and A bands
+at 6870 and \SI{7605}{\angstrom} (the A band removes up to
+$\sim$75\% of the light at its core), and the water bands near 7200,
+8200, 8900 and \SI{9400}{\angstrom}. As an option, \spetc{} multiplies the
+smooth transmission by a parametric band model: each band is a Gaussian
+absorption profile of tabulated centre $\lambda_0$, width $\sigma_b$ and
+zenith depth $d_0$, with the depth growing with airmass as
+$d(X) = d_0\,X^{p}$. The exponent $p$ encodes the curve of growth — the
+regime describing how absorption grows with absorber amount: $p = 1$ for
+the optically thin water lines (absorption $\propto$ absorbers) and
+$p \simeq 0.55$ for the saturated O$_2$ bands, whose cores are already
+black so only the band \emph{wings} deepen ($\propto \sqrt{X}$). This is
+a band-averaged model adequate for S/N budgeting at the ETC's resolution;
+it is not a line-by-line radiative transfer, and it deliberately omits
+the strong variability of the water columns, which only a contemporaneous
+measured spectrum can capture.
+
+\subsection{Rise, set and twilight conventions}
+\label{sec:conventions}
+
+Positions in the planning track are \emph{apparent}: they include
+atmospheric refraction (evaluated with ERFA at the site conditions), which
+lifts objects near the horizon by up to $\sim34'$. Two published
+conventions are nevertheless defined on different quantities, and
+\spetc{} follows both correctly (v10.2). Twilight boundaries — civil
+($-6^\circ$), nautical ($-12^\circ$) and astronomical ($-18^\circ$) — are
+defined on the \emph{geometric} (unrefracted) altitude of the Sun's
+centre, so the sky model receives the geometric solar altitude, computed
+in a refraction-free frame. Sunrise and sunset are the almanac
+convention: the Sun's \emph{upper limb} touching the geometric horizon
+under standard refraction, i.e.\ the centre at geometric altitude
+$-50' = -(34' + 16')$, refraction plus solar semidiameter.
 
 \subsection{Refraction and airmass}
 \label{sec:airmass}
@@ -74,6 +125,29 @@ loss.
   \label{fig:dispersion}
 \end{figure}
 
+\subsection{The local terrain horizon}
+\label{sec:horizon}
+
+The astronomical horizon of a real site is set by terrain, not by
+altitude zero. \spetc{} computes the apparent horizon profile
+$\theta_h(A)$ from the Copernicus GLO-30 global digital surface model
+(30-m resolution): the elevation field within a user-chosen radius
+$r$ (1--100 km) is resampled onto a local East/North metric grid, and
+along each of 360 azimuth rays the maximum apparent elevation angle is
+taken, where the apparent angle of a terrain point at distance $d$ and
+height difference $\Delta h$ is
+\begin{equation}
+  \theta \;=\; \arctan\!\frac{\Delta h - d^2/2R_\oplus}{d} \;+\; 34',
+\end{equation}
+combining the Earth-curvature drop $d^2/2R_\oplus$ with the standard
+$34'$ horizontal refraction (the same convention used for rise/set
+phenomena). The choice of $r$ is a statement about what can block the
+site: 10~km captures the surrounding hills of a typical site; a plain
+below a mountain chain may need 50--100~km before the profile
+converges. The profile is stored as a per-degree CSV; a natural future
+use is masking the visibility track and the S/N time series where the
+target sits below the \emph{local} rather than the geometric horizon.
+
 \subsection{Scintillation}
 \label{sec:scintillation}
 
@@ -89,3 +163,19 @@ with $d$ the aperture diameter, $E$ the site elevation and $t_{\rm exp}$
 the exposure time. Because this noise is multiplicative in the source flux,
 it dominates bright-star photometry and imposes a hard S/N ceiling
 $\simeq I/\sigma_{\rm scint}$ per exposure (Fig.~\ref{fig:snrbudget}).
+
+The scalings deserve a moment's reflection, because they run against
+photon intuition. Photon noise improves with a brighter star;
+scintillation does not --- the fractional modulation is a property of the
+turbulence, not of the source, so above the crossover magnitude
+(roughly $V \sim 10$--12 for decimetre apertures at 60\,s) nothing about
+the star helps any more. What does help: aperture ($d^{-2/3}$ --- a
+40-cm telescope has $1.6\times$ less scintillation noise than a 20-cm),
+airmass (a steep $X^{1.75}$ --- observing at $X=2$ instead of 1.2
+doubles it), altitude of the \emph{site} (the $e^{-E/8\,{\rm km}}$
+factor is why mountain observatories twinkle less), and total time
+($t^{-1/2}$, whether in one frame or many --- Sect.~\ref{sec:stack}).
+For two stars measured differentially the correlation of their
+scintillation decays with angular separation; \spetc{} conservatively
+treats the two as uncorrelated (Sect.~\ref{sec:differential}), which for
+arcminute separations is close to the truth at short exposures.

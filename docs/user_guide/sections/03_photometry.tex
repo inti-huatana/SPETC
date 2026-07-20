@@ -2,39 +2,132 @@
 
 \subsection{Point sources}
 
-\begin{enumerate}
-  \item Set \textsf{Source geometry} to \code{point}.
-  \item Choose the aperture radius. As a rule of thumb $1.5\times$ the
-        seeing FWHM captures $\sim$95\% of a Moffat profile while limiting
-        sky noise; the ETC applies the exact encircled-energy correction,
-        so any radius gives a correct answer.
-  \item Enter the target magnitude and its reference filter and system
-        (Vega default; AB available).
-  \item Run. The S/N-versus-time curve shows the whole night; the red
-        marker is your selected time.
-\end{enumerate}
+\textbf{Step 1 — declare the geometry.} Set \textsf{Source geometry} to
+\code{point}. In this mode the program treats your target as an
+unresolved star whose light on the detector is spread by the atmosphere
+into the seeing profile you selected (Gaussian or Moffat). Everything
+that follows --- how much light your aperture captures, how bright the
+central pixel gets --- is computed from that profile.
 
-For bright stars do not be surprised that the S/N stops growing with
-brightness at a few $\times10^3$: atmospheric scintillation sets a ceiling
-per exposure that no photon count can beat. Stack short frames to go
-beyond it.
+\textbf{Step 2 — choose the aperture radius.} This is the radius, in
+arcseconds, of the circular software aperture you will later use in your
+photometry program (AstroImageJ, ASTAP, IRIS, \dots); the ETC mirrors it.
+The choice is a genuine trade-off. A large aperture captures nearly all
+the star's light but also more sky background and more pixels' worth of
+read noise; a small one keeps the noise down but loses starlight in the
+seeing wings --- and with a Moffat profile the wings carry more light
+than intuition suggests. As a rule of thumb, a radius of $1.5\times$ the
+seeing FWHM captures about 95\% of a Moffat profile; but you do not need
+to optimise by hand, because the ETC applies the exact encircled-energy
+correction for whatever radius you type, so every choice gives a correct
+(if not optimal) prediction. If you want the optimum, try a few values
+and watch the S/N.
 
-\subsection{Extended sources (galaxies, nebulae, planets)}
+\textbf{Step 3 — enter the brightness.} Type the target magnitude, and
+verify the two selectors that give that number its meaning: the
+\emph{reference filter} (the band your magnitude is expressed in) and the
+\emph{magnitude system} (Vega or AB). These need not match the filter you
+observe through: it is perfectly normal to say ``the target is $V=12.3$''
+while observing in R --- the program derives the colour correction from
+the template's spectrum. What matters is that the magnitude, band and
+system agree with wherever you got the number from (catalogues usually
+state Vega magnitudes for Johnson bands and AB for Sloan bands).
 
-Set \textsf{Source geometry} to \code{extended} and give the source area in
-arcsec$^2$ (e.g.\ a $2'\times1'$ galaxy $\approx 7200$; Jupiter
-$\approx1500$ at opposition). Keep entering the \emph{integrated} magnitude:
-the ETC spreads it uniformly over the stated area, so the aperture collects
-the corresponding area fraction and pixel saturation is judged on the
-surface brightness, which is what actually saturates on a resolved object.
-The approximation is intended for sources clearly larger than the seeing
-disc.
+\textbf{Step 4 — run and read.} Press \textsf{Run ETC}. The headline
+number is the S/N at your selected time, but look at the whole
+S/N-versus-time curve in the plot window: it shows the observation
+degrading as the target sets and the airmass grows, and brightening sky
+as the Moon rises. The Results window details every contribution
+(Sect.~\ref{sec:results}).
 
-\subsection{Target S/N mode}
+One behaviour surprises most users the first time: make the star very
+bright and the S/N stops improving, saturating at a few thousand
+regardless of magnitude. This is not a bug --- it is atmospheric
+scintillation, the twinkling of stars, which contributes a noise
+proportional to the signal itself and therefore sets a hard ceiling per
+exposure. No aperture photometry from the ground beats it in a single
+frame; the way past it is stacking many frames, which is what the stack
+planner quantifies.
 
-Enter a value in \textsf{Target S/N} to invert the calculation: the ETC
-solves for the exposure in closed form, including read noise, and the
-time-series plot switches to required exposure versus time. If the required
-exposure would saturate the brightest pixel, the result is flagged and the
-maximum unsaturated single-frame exposure is reported --- split the
-integration into shorter frames and budget one read-noise term per frame.
+\subsection{Extended sources: galaxies, nebulae, planets}
+
+Set \textsf{Source geometry} to \code{extended} and fill in the source
+area in arcsec$^2$. The convention to remember is that \emph{the
+magnitude you enter remains the total, integrated magnitude of the
+object} --- the number catalogues quote --- and the program spreads it
+uniformly over the area you declare. Some example areas: a galaxy listed
+as $2' \times 1'$ covers $\pi ab/4 \simeq 5\,650$ arcsec$^2$ if those are
+full axes; Jupiter at opposition ($\simeq44''$ diameter) covers
+$\simeq1\,500$ arcsec$^2$; the Ring Nebula ($\simeq 86'' \times 62''$)
+about $4\,200$.
+
+Physically the program then does three things differently from a point
+source. First, your aperture no longer captures ``all the light minus
+seeing losses'' but simply the fraction of the object's area it covers
+--- an aperture smaller than the galaxy sees proportionally less of it.
+Second, there is no seeing concentration: the brightest pixel holds the
+mean surface brightness, not a stellar peak, which typically moves the
+saturation limit by orders of magnitude (this is why you can expose far
+longer on a galaxy than on a star of the same total magnitude). Third,
+the S/N refers to the light inside your aperture, which is the quantity
+your photometry software will actually measure. The approximation
+declared in the model --- uniform brightness --- is good when the object
+is much larger than the seeing disc; for objects comparable to the
+seeing (small planetary nebulae), treat the result as indicative.
+
+\subsection{Target S/N mode and the stack planner}
+
+Typing a number into \textsf{Target S/N} reverses the question: instead
+of ``what S/N in this exposure'' the program answers ``what exposure for
+this S/N''. The inversion is done in closed form with the complete noise
+budget --- including scintillation, which matters enormously here: for a
+bright star a solver without scintillation would confidently prescribe a
+short exposure that can never reach your target, no matter what the
+photon statistics say. If the S/N you request lies above the
+scintillation ceiling for a single frame, the required exposure grows
+until the ceiling (which rises as $\sqrt{t}$) meets it.
+
+The required exposure, however, frequently collides with saturation: a
+bright target may need 300\,s for your S/N while its peak pixel saturates
+in 20. This is exactly the situation the \textbf{stack planner} resolves.
+After every run with a target S/N, the label under CALCULATION reports a
+complete plan of the form:
+
+\begin{quote}
+\emph{Stack plan (aperture): 16 $\times$ 19 s (sub limited by saturation)
+= 304 s total for S/N 500; read-noise penalty +2.1\% vs one ideal
+exposure. Background beats read noise above 45 s/frame.}
+\end{quote}
+
+Reading it: the longest safe single frame is 19\,s (set by the brightest
+pixel; or by your own preference if you typed one into \textsf{Stack
+sub-exposure}); sixteen such frames reach the target S/N; splitting the
+exposure costs only 2.1\% extra total time compared with one
+hypothetical long frame, because each frame adds its own read noise; and
+frames longer than 45\,s would be sky-limited, meaning read noise no
+longer matters much beyond that length. If the penalty is large, your
+frames are too short for your read noise --- raise the sub-exposure or
+use a lower-noise gain setting.
+
+\subsection{Differential photometry (variable stars, exoplanets)}
+
+Photometric monitoring is almost never absolute: you measure your target
+\emph{against} a comparison star in the same field, and the number that
+matters is the scatter of that difference, in millimagnitudes. Enter the
+comparison star's magnitude in \textsf{Comparison star mag} and the
+program runs the identical calculation for it, combines the two error
+budgets, and reports, in the PHOTOMETRY label and the outputs tab:
+
+\begin{quote}
+\emph{Differential precision vs m=11.5 comparison: 3.2 mmag per 60 s
+frame (target S/N 520, comparison S/N 610).}
+\end{quote}
+
+Both stars' budgets include their own scintillation, treated as
+uncorrelated between the two --- a conservative assumption at the
+arcminute separations of typical comparison stars. To judge feasibility:
+a typical exoplanet transit is 5--30 mmag deep, a bright-star transit
+like HD 189733 about 25 mmag; with 3.2 mmag per frame you resolve such a
+transit comfortably, and binning $N$ frames improves the precision by
+$\sqrt{N}$. The AAVSO reporting convention likewise wants the per-frame
+uncertainty --- this number is exactly that.

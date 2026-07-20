@@ -5,19 +5,25 @@ The window is organised in five columns, left to right.
 \subsection{Observation, site and target}
 \label{sec:obs-site-target}
 
-Site selector (built-in observatories merged with your persistent
-\code{etc\_sites.json}; \textsf{Save current site} and \textsf{Import site
-file} manage it), geographic coordinates and elevation, date and UT time of
-the planned observation, the observing-interval selector, the time zone
-(IANA name with DST, e.g.\ \code{Europe/Rome}, or a fixed UTC offset), and
-the target: RA/Dec fields (decimal degrees or \code{hh:mm:ss} /
-\code{dd:mm:ss}) with the optional SIMBAD \textsf{Resolve name} button.
-Running the ETC itself never uses the network: only the coordinates in the
-fields count.
+Site selector (the built-in observatories, stored in a single
+\code{observatories.json} that also carries each site's timezone and UTC
+offset, so choosing a site sets the observation time reference
+automatically; \textsf{Save site} and \textsf{Import\ldots} manage the
+list, and \textsf{Google Earth} opens the browser at the current
+coordinates), geographic coordinates and elevation. The
+\textbf{observation date} row is compact: \textsf{Date}, \textsf{Time} and
+a \code{local}/\code{UT} selector on one line, with the local-time source
+(IANA name with DST, e.g.\ \code{Europe/Rome}, or a fixed UTC offset)
+below. The target box holds the RA/Dec fields (decimal degrees or
+\code{hh:mm:ss} / \code{dd:mm:ss}) with the optional SIMBAD \textsf{Resolve
+name} button, the magnitude and reference filter, and the target's
+\textbf{radial velocity} and \textbf{E(B$-$V)}. Running the ETC itself
+never uses the network: only the coordinates in the fields count.
 
 The OBSERVATORY panel also hosts the \textbf{horizon-profile generator}.
 Enter a search radius (1--100, default 10, in km or miles via the unit
-selector) and press \textsf{Generate horizon profile}: the program
+selector) and press \textsf{Generate horizon (DEM)} (next to
+\textsf{Display horizon} on the same row): the program
 downloads the Copernicus GLO-30 elevation model around your coordinates
 (cached locally, so only the first run of an area needs the internet),
 and traces the apparent terrain horizon --- mountains, hills, the
@@ -38,14 +44,23 @@ the program works without them.
 
 \subsection{Telescope, detector and conditions}
 
-Telescope diameter, central obstruction, focal length and scalar optics
-throughput; optional calibrated instrument-response and slit
-resolving-power curves (two-column files with an explicit wavelength unit);
-detector pixel size, gain, full well, ADC bit depth, read noise and dark
-current; the \textbf{sensor type} (\code{mono}, or \code{osc} with the
-R/G/B channel: aperture rates and pixel counts scale by the Bayer fill
-fraction, saturation stays per physical pixel; use the channel's effective
-QE curve); a \textbf{CMOS gain table} (a text file with one row per gain
+The \textbf{Telescope} box holds only the optics: primary diameter, central
+obstruction, focal length, scalar optics throughput (excluding QE), and an
+optional calibrated instrument-response curve with its wavelength unit. The
+separate \textbf{Detector} box holds pixel size, gain, full well, ADC bit
+depth, read noise and dark current; a \textbf{Load QE CSV} button that reads
+the detector quantum efficiency from a two-column (wavelength, QE) file (the
+status beside it shows the loaded file, or \code{qe.dat} loaded by default);
+the QE wavelength unit; the optional calibrated slit resolving-power curve;
+the \textbf{sensor type} — \code{monochrome} for a mono CCD/CMOS, or
+\code{color} for a one-shot-colour (Bayer) sensor read one channel at a
+time, with the R/G/B channel selector (greyed out for a monochrome sensor);
+aperture rates and pixel counts scale by the channel's Bayer fill fraction,
+saturation stays per physical pixel, and the QE curve should be that
+channel's effective QE (sensor QE $\times$ colour-filter dye). At the end of
+the Detector box the \textbf{Save profile} / \textbf{Load profile} buttons
+bundle the whole telescope + detector + QE + response set into a portable
+JSON. A \textbf{CMOS gain table} (a text file with one row per gain
 setting: setting, e$^-$/ADU, read noise, full well — published by camera
 makers and measured on PhotonsToPhotos): pick the setting and the three
 detector fields fill consistently; seeing FWHM; the sky-background mode
@@ -64,17 +79,18 @@ ghosting that raises the background noise and the peak-pixel prediction;
 a \textbf{guiding rms} in arcsec (0 = perfect tracking) that adds
 image-motion blur in quadrature to the seeing --- enter your autoguider's
 rms error, or an estimate of the unguided drift per exposure; a
-\textbf{telluric bands} checkbox that adds the O$_2$/H$_2$O molecular
-absorption bands of the red and near-infrared (the deep A band at
-7605\,\AA{} in particular) on top of the smooth extinction curve; and the
+\textbf{telluric bands} checkbox that adds a \emph{built-in parametric}
+model of the O$_2$/H$_2$O molecular absorption bands of the red and
+near-infrared (the deep A band at 7605\,\AA{} in particular) on top of the
+smooth extinction curve --- no data file is needed, and it is an
+approximation for red/NIR S/N budgeting rather than a measured site
+spectrum; and the
 \textbf{sky annulus pixels} field: the number of pixels you actually use
 to measure the background around the star (0 = assume it perfectly
 known). A finite value adds the classical $(1+n_{\rm pix}/n_{\rm sky})$
 sky-subtraction noise to every background term --- with a small annulus
 this is tens of percent of the background noise, so faint-target
 predictions become noticeably more honest.
-\textsf{Save/Load instrument profile} stores the whole column as a portable
-JSON with its QE and response curves.
 
 \subsection{Calculation settings}
 
@@ -92,14 +108,20 @@ mmag-per-frame precision appears in the label below. The spectroscopy
 panel holds the resolving power, slit width, extraction height, sampling,
 the slitless parameters (Sect.~\ref{sec:spec-guide}), the wavelength range
 and the S/N reference wavelength, the \textbf{slit orientation}
-(\code{parallactic} or \code{fixed}), and the \textbf{spectrograph
-geometry helper}: enter grating lines/mm and collimator/camera focal
-lengths and press \textsf{Compute R from geometry} — the Littrow grating
-equation fills the R field (which stays editable) and reports whether you
-are slit- or seeing-limited. The optional \textbf{clamp} checkbox below
-it goes one step further: with it ticked, the engine itself limits the
-entered R to what the geometry can deliver, so a typo like R $=$ 100\,000
-on a 600 l/mm grating cannot silently inflate every prediction.
+(\code{parallactic} or \code{fixed}), and the grating efficiency. A
+\emph{single} \textbf{grating lines/mm} field feeds both the slitless
+disperser and the Littrow geometry helper (the previous duplicate field is
+gone). Grating efficiency can be either a scalar 0--1 or a
+wavelength-dependent curve loaded from a two-column CSV with
+\textsf{Load CSV\ldots} (the curve overrides the scalar; \textsf{Clear}
+reverts). The \textbf{spectrograph geometry helper} takes the
+collimator/camera focal lengths and that grating lines/mm value; press
+\textsf{Compute R from geometry} and the Littrow grating equation fills the
+R field (which stays editable) and reports whether you are slit- or
+seeing-limited. The optional \textbf{clamp} checkbox goes one step further:
+with it ticked, the engine itself limits the entered R to what the geometry
+can deliver, so a typo like R $=$ 100\,000 on a 600 l/mm grating cannot
+silently inflate every prediction.
 
 \subsection{Filter and template selection}
 

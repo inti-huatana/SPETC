@@ -84,10 +84,12 @@ Use **Save instrument profile** to write an instrument JSON file and copy its
 current QE curve beside it as `<profile>_qe.dat`. Optional calibrated
 instrument-response and slit-width/resolving-power curves are copied beside it
 as well. The profile records their relative filenames, making the set portable.
-The most recently saved or loaded profile is restored automatically at startup. The site selector merges
-the built-in observatories with the persistent `etc_sites.json`; **Save current
-site** adds or updates an entry there, while **Import site file** merges JSON
-site entries into the same local list.
+The most recently saved or loaded profile is restored automatically at startup. All
+sites live in a single `observatories.json` (name, lon/lat, elev, mag_sky,
+timezone, utc_offset_h — so selecting a site sets the time reference
+automatically); **Save site** adds or updates an entry, **Import…** merges
+another JSON into it, and **Google Earth** opens the browser at the site
+coordinates. The obsolete `etc_sites.json` is no longer used.
 
 The Filter Selector has independent **reference magnitude** and **observing**
 filters. The first calibrates the target flux; the second is the physical

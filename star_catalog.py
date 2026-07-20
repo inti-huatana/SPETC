@@ -333,7 +333,7 @@ def load_star_spectrum(record, data_dir):
     spectrum = spectrum[keep]
     if len(spectrum) < 2:
         raise ValueError(f"Spectrum for '{record.name}' has fewer than two distinct wavelengths: {spec_path}")
-    if record.nrow > 0 and abs(len(spectrum) - record.nrow) > 1:
-        # Header/comment rows are common, hence this is intentionally only a diagnostic.
-        print(f"Warning: {record.name} declares {record.nrow} rows but {len(spectrum)} usable rows were loaded.")
+    # A declared/loaded row-count mismatch is normal (header and comment rows,
+    # duplicate wavelengths removed above) and not actionable, so it is not
+    # reported.
     return spectrum

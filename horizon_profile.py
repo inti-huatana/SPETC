@@ -46,6 +46,12 @@ MIN_RADIUS_KM = 1.0
 MAX_RADIUS_KM = 100.0
 KM_PER_MILE = 1.609344
 
+# Physical bounds on the reported horizon elevation: from the top of a very
+# high mountain looking down into a valley (-20 deg) up to straight overhead
+# (+90 deg).  The computed profile is clamped to this range.
+HORIZON_MIN_DEG = -20.0
+HORIZON_MAX_DEG = 90.0
+
 
 def _require_geo_stack():
     try:
@@ -207,6 +213,9 @@ def compute_horizon_profile(grid, n_azimuths=360):
         delta_h = samples[valid] - grid.center_elevation_m - curvature[valid]
         angles = np.degrees(np.arctan2(delta_h, distances[valid])) + HORIZON_REFRACTION_DEG
         horizon[i] = float(np.max(angles))
+    # Constrain to the physical range: never below a deep valley view
+    # (-20 deg) nor above the zenith (+90 deg).
+    horizon = np.clip(horizon, HORIZON_MIN_DEG, HORIZON_MAX_DEG)
     return azimuths, horizon
 
 
@@ -258,9 +267,39 @@ def load_horizon_csv(path):
     return data[:, 0], data[:, 1], metadata
 
 
+def horizon_png_path(lat_deg, lon_deg, radius_km, directory=HORIZON_DIR):
+    return Path(directory) / f"horizon_lat{lat_deg:+.4f}_lon{lon_deg:+.4f}_r{radius_km:g}km.png"
+
+
+def save_horizon_png(path, azimuths_deg, horizon_deg, lat_deg, lon_deg, radius_km,
+                     center_elevation_m):
+    """Write a standalone PNG of the horizon profile (no GUI needed)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(8.0, 3.4), dpi=120)
+    ax.fill_between(azimuths_deg, horizon_deg, HORIZON_MIN_DEG,
+                    where=horizon_deg > HORIZON_MIN_DEG, color="#b0c4de", alpha=0.7)
+    ax.plot(azimuths_deg, horizon_deg, color="#1f4f82", linewidth=1.3)
+    ax.axhline(0.0, color="#888888", linewidth=0.8, linestyle="--")
+    ax.set(xlim=(0, 360), ylim=(HORIZON_MIN_DEG, max(10.0, float(np.max(horizon_deg)) + 3.0)),
+           xlabel="Azimuth [deg]  (N=0, E=90, S=180, W=270)",
+           ylabel="Horizon elevation [deg]",
+           title=f"SPETC horizon  lat {lat_deg:+.4f}  lon {lon_deg:+.4f}  "
+                 f"r = {radius_km:g} km  (site {center_elevation_m:.0f} m)")
+    ax.set_xticks([0, 45, 90, 135, 180, 225, 270, 315, 360])
+    ax.grid(True, color="#dddddd")
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
 def generate_horizon(lat_deg, lon_deg, radius_km, directory=HORIZON_DIR,
                      cache_dir=DEM_CACHE_DIR, n_azimuths=360):
-    """Full pipeline: DEM download, horizon computation, automatic CSV save."""
+    """Full pipeline: DEM download, horizon computation, automatic CSV+PNG save."""
     radius_km = float(radius_km)
     if not MIN_RADIUS_KM <= radius_km <= MAX_RADIUS_KM:
         raise ValueError(f"Horizon radius must be between {MIN_RADIUS_KM:g} and "
@@ -271,7 +310,25 @@ def generate_horizon(lat_deg, lon_deg, radius_km, directory=HORIZON_DIR,
     path = save_horizon_csv(horizon_csv_path(lat_deg, lon_deg, radius_km, directory),
                             azimuths, horizon, lat_deg, lon_deg, radius_km,
                             grid.center_elevation_m)
-    return {"path": path, "azimuths_deg": azimuths, "horizon_deg": horizon,
+    png_path = save_horizon_png(horizon_png_path(lat_deg, lon_deg, radius_km, directory),
+                                azimuths, horizon, lat_deg, lon_deg, radius_km,
+                                grid.center_elevation_m)
+    return {"path": path, "png_path": png_path, "azimuths_deg": azimuths, "horizon_deg": horizon,
             "center_elevation_m": grid.center_elevation_m,
             "max_horizon_deg": float(np.max(horizon)),
             "max_horizon_azimuth_deg": float(azimuths[int(np.argmax(horizon))])}
+
+
+def horizon_elevation_at_azimuth(azimuths_deg, horizon_deg, query_azimuth_deg):
+    """Interpolate the horizon elevation at one or more azimuths (deg).
+
+    Used to couple the terrain horizon with target visibility: a target is
+    blocked when its altitude is below the horizon at its azimuth.
+    """
+    az = np.asarray(azimuths_deg, dtype=float)
+    order = np.argsort(az)
+    az_sorted, hor_sorted = az[order], np.asarray(horizon_deg, dtype=float)[order]
+    # Wrap the profile so interpolation is periodic in azimuth.
+    az_wrapped = np.concatenate((az_sorted - 360.0, az_sorted, az_sorted + 360.0))
+    hor_wrapped = np.concatenate((hor_sorted, hor_sorted, hor_sorted))
+    return np.interp(np.asarray(query_azimuth_deg, dtype=float) % 360.0, az_wrapped, hor_wrapped)

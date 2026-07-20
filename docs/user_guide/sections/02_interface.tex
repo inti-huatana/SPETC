@@ -3,6 +3,7 @@
 The window is organised in five columns, left to right.
 
 \subsection{Observation, site and target}
+\label{sec:obs-site-target}
 
 Site selector (built-in observatories merged with your persistent
 \code{etc\_sites.json}; \textsf{Save current site} and \textsf{Import site
@@ -23,9 +24,15 @@ and traces the apparent terrain horizon --- mountains, hills, the
 curvature of the Earth and standard refraction included --- in 360
 azimuth steps. The computation runs in the background and reports the
 highest obstruction when done; the profile is \emph{automatically} saved
-as a CSV in \code{data/horizons/} (format in
-Sect.~\ref{sec:file-horizon}). \textsf{Display horizon} plots the saved
-profile for the current coordinates at any time. The generator needs two
+both as a CSV and as a PNG plot in \code{data/horizons/} (format in
+Sect.~\ref{sec:file-horizon}). The horizon elevation is constrained to the
+physical range $-20^\circ$ (the view down from a very high summit) to
+$+90^\circ$. \textsf{Display horizon} plots the saved profile for the
+current coordinates at any time. When a saved horizon exists for the
+current site it is also drawn on the scientific plots: as the terrain
+outline on the sky path, and as a shaded exclusion band on the
+altitude-versus-time panel, so the target's visibility is shown against
+the \emph{local} horizon and not merely the geometric one. The generator needs two
 extra libraries (\code{pip install rasterio pyproj}); everything else in
 the program works without them.
 
@@ -99,19 +106,31 @@ on a 600 l/mm grating cannot silently inflate every prediction.
 Two independent filters: the \textbf{reference} filter, in which your
 magnitude is expressed (Vega or AB), and the \textbf{observing} filter,
 physically in the beam for both photometry and spectroscopy (spectroscopy
-defaults to \code{BLANK}, the unfiltered response). The panel previews the
+defaults to \code{BLANK}, the unfiltered response). Besides the normal
+photometric filters (each a \code{_Vega}/\code{_AB} profile pair), the
+selector also lists single-file \emph{instrumental} passbands that have no
+magnitude of their own and are calibrated on the AB scale: \code{BLANK}
+(unfiltered), \code{DARK} (opaque) and neutral-density filters
+\code{ND25}, \code{ND50}, … Drop their \code{.xml} into the filters
+directory and list them in \code{filters.list} to have them appear. The panel previews the
 observing transmission curve with its pivot wavelength, width and zero
 point; the template selector searches the catalogue by name and previews
-the selected flux distribution; \textsf{Validate V and B$-$V} checks the
-template's synthetic colours against the catalogue. Two optional fields
-transform the template before it is calibrated: the \textbf{radial
-velocity} in km/s (positive receding) shifts all wavelengths by
-$(1+v/c)$ — relevant for high-velocity stars and extragalactic targets
-at low resolution — and \textbf{E(B$-$V)} reddens the template with the
+the selected flux distribution over the fixed \SIrange{3000}{9000}{\angstrom}
+optical window (so every template is directly comparable); \textsf{Validate
+V and B$-$V} checks the template's synthetic colours against the catalogue.
+The \textbf{radial velocity} and \textbf{E(B$-$V)} that transform the
+template are entered in the \emph{target} box (first column,
+Sect.~\ref{sec:obs-site-target}), because they are properties of the
+target even though they act on
+the template: the radial velocity (km/s, positive receding) shifts all
+wavelengths by $(1+v/c)$, and E(B$-$V) reddens the template with the
 standard CCM89 interstellar extinction law ($R_V = 3.1$). The magnitude
 you enter always stays the \emph{observed} one; the transforms only
 change the template's colours, exactly as reddening and motion do to a
-real star.
+real star. After a run the outputs tab reports the resulting synthetic
+$(B-V)_0$ of the unreddened template and the reddened $(B-V)$, and — for
+spectroscopy — the RV shift in pixels and the velocity sampling
+(km/s per pixel) at 4000, 5000, 6000 and \SI{7000}{\angstrom}.
 
 \subsection{Run actions}
 

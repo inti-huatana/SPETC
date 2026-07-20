@@ -97,6 +97,13 @@ def sky_magnitude_vega(pivot_wavelength_aa, utc_datetime, target_altitude_deg, t
         return daylight_mag
     if sun_altitude_deg <= -18.0:
         return night_mag
-    blend = (float(sun_altitude_deg) + 18.0) / 18.0
-    flux = (1.0 - blend) * 10.0 ** (-0.4 * night_mag) + blend * 10.0 ** (-0.4 * daylight_mag)
-    return float(-2.5 * np.log10(flux))
+    # Twilight bridge between the Sun on the horizon and the end of
+    # astronomical twilight.  The blend is linear in *magnitude* with Sun
+    # altitude, not in flux: a flux blend is completely dominated by the very
+    # bright daylight anchor even a few degrees below the horizon (it would
+    # put the sky near 6 mag/arcsec2 at Sun -15 deg), whereas the observed
+    # twilight brightness falls roughly one magnitude per degree of Sun
+    # depression.  Magnitude-linear interpolation is monotonic, matches both
+    # endpoints, and reproduces the familiar ~1 mag/deg twilight gradient.
+    blend = (float(sun_altitude_deg) + 18.0) / 18.0   # 1 at horizon, 0 at -18 deg
+    return float((1.0 - blend) * night_mag + blend * daylight_mag)

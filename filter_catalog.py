@@ -58,14 +58,36 @@ def _list_path(root):
     raise FileNotFoundError(f"Filter list not found: expected {root / 'filters.list'} or {root / 'filters' / 'filters.list'}")
 
 
-def _logical_name(entry):
+def _entry_stem(entry):
+    """Bare filter name of a list entry, without directory or .xml suffix."""
     entry = Path(entry).name
     if entry.lower().endswith(".xml"):
         entry = entry[:-4]
+    return entry
+
+
+def _logical_name(entry):
+    """Logical name for a ``_Vega``/``_AB`` paired entry, else ``None``."""
+    stem = _entry_stem(entry)
     for suffix in ("_Vega", "_AB"):
-        if entry.endswith(suffix):
-            return entry[:-len(suffix)]
-    return entry if entry.upper() == "BLANK" else None
+        if stem.endswith(suffix):
+            return stem[:-len(suffix)]
+    return None
+
+
+def _special_single_file_name(entry):
+    """Name of a single-file, magnitude-system-free filter (BLANK, DARK, NDxx).
+
+    These are instrumental passbands — the unfiltered response, a fully
+    opaque dark, and neutral-density filters — that have no Vega or AB
+    magnitude of their own, so they ship as one ``.xml`` with no
+    ``_Vega``/``_AB`` twin and are calibrated on the AB 3631-Jy scale for
+    both selector states.
+    """
+    stem = _entry_stem(entry)
+    if stem.endswith("_Vega") or stem.endswith("_AB"):
+        return None
+    return stem
 
 
 def _resolve_profile_path(root, entry):
@@ -89,27 +111,34 @@ def list_filter_labels(directory):
     """Return logical filter names from either supported local list layout."""
     directory = Path(directory)
     list_path = _list_path(directory)
-    names = set()
+    paired, special = set(), set()
     for raw in list_path.read_text(encoding="utf-8").splitlines():
         entry = raw.strip()
         if not entry or entry.startswith("#"):
             continue
         name = _logical_name(entry)
         if name:
-            names.add(name)
+            paired.add(name)
+        else:
+            # A single-file entry with no _Vega/_AB twin: an instrumental
+            # passband (BLANK, DARK, NDxx) shown on its own.
+            special.add(_special_single_file_name(entry))
     # BLANK.xml is intentionally optional from filters.list: placing it in
     # data/filters makes the special unfiltered response available directly.
     if any(path.is_file() for path in (
         directory / "BLANK.xml", directory / "filters" / "BLANK.xml",
         list_path.parent / "BLANK.xml", list_path.parent / "filters" / "BLANK.xml",
     )):
-        names.add("BLANK")
-    if not names:
+        special.add("BLANK")
+    special.discard(None)
+    if not paired and not special:
         raise ValueError(f"No *_Vega or *_AB profiles found in {list_path}")
-    # The filter-free response is the natural spectroscopy default.  Keep it
-    # first while retaining deterministic alphabetical order for real filters.
-    return (["BLANK"] if "BLANK" in names else []) + sorted(
-        (name for name in names if name != "BLANK"), key=str.casefold)
+    # The filter-free response is the natural spectroscopy default.  Keep
+    # BLANK first, then the other instrumental (DARK/ND) filters, then the
+    # real photometric filters in deterministic alphabetical order.
+    ordered_special = (["BLANK"] if "BLANK" in special else []) + sorted(
+        (name for name in special if name != "BLANK"), key=str.casefold)
+    return ordered_special + sorted(paired, key=str.casefold)
 
 
 def _parse_votable(path, label, magnitude_system):
@@ -176,21 +205,34 @@ def load_filter_profile(directory, label, magnitude_system):
     if system not in {"VEGA", "AB"}:
         raise ValueError("Magnitude system must be Vega or AB")
     directory = Path(directory)
-    if label not in set(list_filter_labels(directory)):
+    labels = set(list_filter_labels(directory))
+    if label not in labels:
         raise KeyError(f"Unknown filter {label!r}")
-    if label == "BLANK":
-        for entry in ("filters/BLANK.xml", "BLANK.xml", "filters/BLANK"):
+    # A logical name that has a _Vega/_AB profile on disk is a normal
+    # photometric filter; anything else in the list (BLANK, DARK, NDxx) is a
+    # single-file instrumental passband with no magnitude of its own,
+    # calibrated on the AB scale for both selector states.
+    has_pair = any(_resolve_profile_path_exists(directory, f"{label}_{s}")
+                   for s in ("Vega", "AB"))
+    if not has_pair:
+        for entry in (f"filters/{label}.xml", f"{label}.xml", f"filters/{label}", label):
             try:
                 profile = _parse_votable(_resolve_profile_path(directory, entry), label, "AB")
-                # A truly filter-free magnitude has no Vega passband.  The
-                # special profile is therefore defined on the AB 3631-Jy
-                # scale for both selector states.
-                return profile if system == "AB" else replace(profile, magnitude_system="VEGA", zero_point_jy=AB_ZERO_POINT_JY)
+                return profile if system == "AB" else replace(
+                    profile, magnitude_system="VEGA", zero_point_jy=AB_ZERO_POINT_JY)
             except FileNotFoundError:
                 continue
-        raise FileNotFoundError("BLANK.xml not found in the data filters directory")
+        raise FileNotFoundError(f"{label}.xml not found in the data filters directory")
     entry = f"{label}_{'Vega' if system == 'VEGA' else 'AB'}"
     return _parse_votable(_resolve_profile_path(directory, entry), label, system)
+
+
+def _resolve_profile_path_exists(directory, entry):
+    try:
+        _resolve_profile_path(directory, entry)
+        return True
+    except FileNotFoundError:
+        return False
 
 
 def magnitude_to_ab(magnitude, profile):

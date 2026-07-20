@@ -136,6 +136,33 @@ effective resolving power is $R \simeq 100$--200
   \label{fig:sa100}
 \end{figure}
 
+\subsection{Detector footprint, diffraction orders, and optimal extraction}
+\label{sec:footprint}
+
+Given the detector dimensions $L\times W$ pixels (dispersion $\times$
+cross-dispersion), the ETC reports whether the requested spectrum fits.
+The dispersion-direction length of a spectrum spanning
+$[\lambda_{\min},\lambda_{\max}]$ is
+$(\lambda_{\max}-\lambda_{\min})/\mathcal{D}$ pixels in slitless mode
+(constant $\mathcal{D}$), and $s\,R\,\ln(\lambda_{\max}/\lambda_{\min})$ in
+slit mode, where $s$ is the number of pixels per resolution element (since
+$\mathcal{D}=\lambda/(sR)$ there). For an objective grating the zero order
+(the undispersed star) sits at pixel~0 and order $m$ places wavelength
+$\lambda$ at
+$N_m(\lambda)=\lambda\,L_{\rm mm}\,n\,m/(10^{4}p_{\mu m})$ pixels from it;
+the ETC lists orders $m=1,2,3$ and flags any whose footprint runs past
+$L$. This is exactly the overlap that a Star Analyser user manages by
+framing and, if needed, an order-blocking filter.
+
+The \citet{horne1986} optimal-extraction algorithm weights each
+cross-dispersion pixel by $P_x/\sigma_x^2$ (profile over variance) rather
+than summing a fixed aperture, recovering the S/N of an infinite aperture.
+Its \emph{noise-equivalent width} — the width of the top-hat that would
+give the same variance — is $1/\!\int P^2\,dx$, which for a Gaussian
+spatial profile of the seeing is $2\sqrt{\pi}\,\sigma = 1.51\,\mathrm{FWHM}$.
+The ETC reports this as the optimal extraction width (arcsec and pixels);
+it is the extraction aperture that maximises S/N for the given seeing.
+
 \subsection{Slit-spectrograph geometry}
 \label{sec:geometry}
 
@@ -158,6 +185,30 @@ and feeds the ETC's resolving-power field, which remains editable; an
 LHIRES III-like configuration (2400 lines/mm, $f=200$~mm Littrow, 25-\si{\micro\metre}
 slit) returns $R \simeq 2\times10^4$ at H$\alpha$, in line with the
 instrument's specification.
+
+\paragraph{Why the camera focal length does not change $R$.} The three
+focal lengths of a spectrograph are distinct optical elements and must not
+be confused: the \emph{telescope} focal length sets the plate scale at the
+slit (arcsec$\to$mm), the \emph{collimator} collimates the diverging beam
+onto the grating, and the \emph{camera} refocuses the dispersed beam onto
+the detector. Substituting the reciprocal dispersion into $\Delta\lambda$
+makes $f_{\rm cam}$ cancel exactly:
+\begin{equation}
+  \Delta\lambda = \min(w_{\rm slit}, w_{\rm seeing})
+  \frac{f_{\rm cam}}{f_{\rm coll}}\,
+  \frac{\cos\beta\;10^{7}}{m\,n\,f_{\rm cam}}
+  = \min(w_{\rm slit}, w_{\rm seeing})\,
+  \frac{\cos\beta\;10^{7}}{m\,n\,f_{\rm coll}} ,
+\end{equation}
+so $R$ depends on the slit (or seeing) width, the collimator focal length,
+the grating and the telescope focal length — but \emph{not} on the camera
+focal length. This is a well-known and correct result, not a bug: the
+camera magnifies the slit image and the dispersion by the same factor, so
+their ratio (the resolving power) is invariant. What the camera focal
+length \emph{does} set is the physical scale of the spectrum on the
+detector, hence the dispersion in \si{\angstrom}/pixel and the number of
+pixels sampling one resolution element. Changing only $f_{\rm cam}$ in the
+helper therefore leaves $R$ unchanged by design.
 
 Two guards keep the entered $R$ honest (v10.2). With the geometry
 supplied and the clamp option enabled, the engine itself limits the

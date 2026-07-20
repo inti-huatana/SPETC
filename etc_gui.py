@@ -50,6 +50,7 @@ class ETCGUI(tk.Tk):
         self.geometry("1850x980")
         self.minsize(1200, 720)
         self._saved = self._load_config()
+        self._program_start_utc = datetime.now(timezone.utc)
         self._vars = {}
         self.active_profile_path = self._saved.get("active_instrument_profile", "")
         self._site_records = self._load_site_records()
@@ -130,8 +131,11 @@ class ETCGUI(tk.Tk):
             bg="#e6e6e6",
         )
         self.status_label.pack(fill="x", padx=5, pady=(0, 5))
-        
+
         self.status_var.trace_add("write", lambda *_: self._update_status_colour())
+        # Apply the initial photometry/spectroscopy and slit/slitless greying
+        # now that every widget and status var exists.
+        self._on_calculation_mode_changed()
     
     def _update_status_colour(self):
         text = self.status_var.get().strip().lower()
@@ -372,20 +376,31 @@ class ETCGUI(tk.Tk):
                                 (4, "Read noise (e- rms/pix):", self.readnoise_var),
                                 (5, "Dark current (e-/s/pix):", self.dark_var)]:
             self._entry(f, row, label, var)
+        # Detector dimensions in pixels: L (length, dispersion direction) and
+        # W (width, cross-dispersion), used to check whether a spectrum and
+        # its diffraction orders fit on the chip.  Both must be > 0.
+        self.det_length_var = self._var("detector_length_pix", "1024")
+        self.det_width_var = self._var("detector_width_pix", "1024")
+        ttk.Label(f, text="Detector L x W (pixels):").grid(row=6, column=0, sticky="w")
+        lw_row = ttk.Frame(f); lw_row.grid(row=6, column=1, sticky="ew")
+        ttk.Label(lw_row, text="L").pack(side="left")
+        ttk.Entry(lw_row, textvariable=self.det_length_var, width=7).pack(side="left", padx=(2, 8))
+        ttk.Label(lw_row, text="W").pack(side="left")
+        ttk.Entry(lw_row, textvariable=self.det_width_var, width=7).pack(side="left", padx=(2, 0))
         # Quantum efficiency is loaded on demand from a two-column CSV/text
         # file (wavelength, QE) rather than silently from data/qe.dat.
-        ttk.Label(f, text="Quantum efficiency (QE):").grid(row=6, column=0, sticky="w")
-        qe_row = ttk.Frame(f); qe_row.grid(row=6, column=1, sticky="ew")
+        ttk.Label(f, text="Quantum efficiency (QE):").grid(row=7, column=0, sticky="w")
+        qe_row = ttk.Frame(f); qe_row.grid(row=7, column=1, sticky="ew")
         qe_row.columnconfigure(0, weight=1)
         self.qe_status_var = tk.StringVar(value="no QE loaded")
         ttk.Label(qe_row, textvariable=self.qe_status_var, foreground="#1f4f82").grid(row=0, column=0, sticky="w")
         ttk.Button(qe_row, text="Load QE CSV…", command=self._choose_qe_curve).grid(row=0, column=1, padx=(3, 0))
-        ttk.Label(f, text="QE wavelength unit:").grid(row=7, column=0, sticky="w")
+        ttk.Label(f, text="QE wavelength unit:").grid(row=8, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.qe_unit_var, state="readonly",
-                     values=("Angstrom", "nm", "um"), width=10).grid(row=7, column=1, sticky="ew")
+                     values=("Angstrom", "nm", "um"), width=10).grid(row=8, column=1, sticky="ew")
         self.slit_resolution_path_var = self._var("slit_resolution_curve_path", "")
-        ttk.Label(f, text="Calibrated slit R (width):").grid(row=8, column=0, sticky="w")
-        resolution_row = ttk.Frame(f); resolution_row.grid(row=8, column=1, sticky="ew")
+        ttk.Label(f, text="Calibrated slit R (width):").grid(row=9, column=0, sticky="w")
+        resolution_row = ttk.Frame(f); resolution_row.grid(row=9, column=1, sticky="ew")
         resolution_row.columnconfigure(0, weight=1)
         ttk.Entry(resolution_row, textvariable=self.slit_resolution_path_var, width=14).grid(row=0, column=0, sticky="ew")
         ttk.Button(resolution_row, text="Browse…", command=self._choose_slit_resolution_curve).grid(row=0, column=1, padx=(3, 0))
@@ -396,8 +411,8 @@ class ETCGUI(tk.Tk):
         if self.sensor_type_var.get() in ("mono", "osc"):  # migrate old values
             self.sensor_type_var.set({"mono": "monochrome", "osc": "color"}[self.sensor_type_var.get()])
         self.osc_channel_var = self._var("osc_channel", "G")
-        ttk.Label(f, text="Sensor type:").grid(row=9, column=0, sticky="w")
-        sensor_row = ttk.Frame(f); sensor_row.grid(row=9, column=1, sticky="ew")
+        ttk.Label(f, text="Sensor type:").grid(row=10, column=0, sticky="w")
+        sensor_row = ttk.Frame(f); sensor_row.grid(row=10, column=1, sticky="ew")
         self.sensor_type_combo = ttk.Combobox(sensor_row, textvariable=self.sensor_type_var, state="readonly",
                                                width=11, values=("monochrome", "color"))
         self.sensor_type_combo.grid(row=0, column=0, sticky="w")
@@ -410,12 +425,12 @@ class ETCGUI(tk.Tk):
         ttk.Label(f, text="color: a one-shot-colour (Bayer) sensor read one channel at a time "
                           "(R/B use 1/4, G 1/2 of the pixels). Supply that channel's effective QE "
                           "(sensor QE x colour-filter dye).",
-                  foreground="gray35", wraplength=300, justify="left").grid(row=10, column=0, columnspan=2, sticky="w")
+                  foreground="gray35", wraplength=300, justify="left").grid(row=11, column=0, columnspan=2, sticky="w")
         self.gain_table_path_var = self._var("gain_table_path", "")
         self.gain_setting_var = tk.StringVar(value="")
         self.gain_table_rows = []
-        ttk.Label(f, text="CMOS gain table:").grid(row=11, column=0, sticky="w")
-        gain_row = ttk.Frame(f); gain_row.grid(row=11, column=1, sticky="ew")
+        ttk.Label(f, text="CMOS gain table:").grid(row=12, column=0, sticky="w")
+        gain_row = ttk.Frame(f); gain_row.grid(row=12, column=1, sticky="ew")
         gain_row.columnconfigure(0, weight=1)
         self.gain_setting_combo = ttk.Combobox(gain_row, textvariable=self.gain_setting_var,
                                                state="disabled", width=8, values=())
@@ -424,14 +439,14 @@ class ETCGUI(tk.Tk):
         ttk.Button(gain_row, text="Browse…", command=self._choose_gain_table).grid(row=0, column=1, padx=(3, 0))
         ttk.Label(f, text="Gain table rows: setting, e-/ADU, read noise e-, full well e-. Selecting a"
                           " setting fills the three detector fields.",
-                  foreground="gray35", wraplength=300, justify="left").grid(row=12, column=0, columnspan=2, sticky="w")
+                  foreground="gray35", wraplength=300, justify="left").grid(row=13, column=0, columnspan=2, sticky="w")
         # Instrument profile save/load lives at the end of the detector box,
         # both buttons on one row.
         self.instrument_profile_section = f
         self.profile_status = tk.StringVar(value="Save/Load bundles the telescope, detector, QE and response curves.")
         ttk.Label(f, textvariable=self.profile_status, foreground="blue", wraplength=300,
-                  justify="left").grid(row=13, column=0, columnspan=2, sticky="w", pady=(4, 0))
-        profile_row = ttk.Frame(f); profile_row.grid(row=14, column=0, columnspan=2, sticky="ew", pady=(2, 0))
+                  justify="left").grid(row=14, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        profile_row = ttk.Frame(f); profile_row.grid(row=15, column=0, columnspan=2, sticky="ew", pady=(2, 0))
         profile_row.columnconfigure(0, weight=1); profile_row.columnconfigure(1, weight=1)
         ttk.Button(profile_row, text="Save profile…", command=self._save_instrument_profile).grid(row=0, column=0, sticky="ew", padx=(0, 2))
         ttk.Button(profile_row, text="Load profile…", command=self._load_instrument_profile).grid(row=0, column=1, sticky="ew", padx=(2, 0))
@@ -519,6 +534,138 @@ class ETCGUI(tk.Tk):
             is_color = self.sensor_type_var.get().strip().lower() in ("color", "colour", "osc")
             self.osc_channel_combo.configure(state="readonly" if is_color else "disabled")
 
+    def _labeled_entry(self, frame, row, text, variable, width=20):
+        """Grid a label + entry like _entry, but return the Entry widget."""
+        ttk.Label(frame, text=text).grid(row=row, column=0, sticky="w", padx=(0, 6), pady=1)
+        entry = ttk.Entry(frame, textvariable=variable, width=width)
+        entry.grid(row=row, column=1, sticky="ew", pady=1)
+        return entry
+
+    @staticmethod
+    def _set_widget_enabled(widget, enabled):
+        """Enable/disable an input widget, honouring readonly comboboxes."""
+        import tkinter.ttk as _ttk
+        if isinstance(widget, _ttk.Combobox):
+            widget.configure(state="readonly" if enabled else "disabled")
+        else:
+            try:
+                widget.configure(state="normal" if enabled else "disabled")
+            except tk.TclError:
+                pass
+
+    def _set_frame_enabled(self, frame, enabled):
+        """Recursively enable/disable every input widget in a frame (labels stay)."""
+        import tkinter.ttk as _ttk
+        for child in frame.winfo_children():
+            if isinstance(child, (ttk.Frame, _ttk.LabelFrame)):
+                self._set_frame_enabled(child, enabled)
+            elif isinstance(child, (ttk.Entry, _ttk.Combobox, ttk.Button, ttk.Checkbutton,
+                                    ttk.Radiobutton, ttk.Scale)):
+                self._set_widget_enabled(child, enabled)
+
+    def _update_spectroscopy_mode_state(self):
+        """Grey out the fields of the non-selected spectroscopy mode; the whole
+        box is disabled entirely when the calculation mode is photometry."""
+        if not hasattr(self, "spectroscopy_box"):
+            return
+        photometry = self.mode_var.get() == "photometry"
+        if photometry:
+            self._set_frame_enabled(self.spectroscopy_box, False)
+            return
+        self._set_frame_enabled(self.spectroscopy_box, True)
+        is_slit = self.spectroscopy_mode_var.get() == "slit"
+        for widget in self._slit_widgets:
+            self._set_widget_enabled(widget, is_slit)
+        for widget in self._slitless_widgets:
+            self._set_widget_enabled(widget, not is_slit)
+        self._update_grating_eff_state()
+
+    def _update_grating_eff_state(self):
+        """value: scalar entry active, Load button greyed. file: the reverse."""
+        if not hasattr(self, "grating_eff_value_entry"):
+            return
+        use_value = self.grating_efficiency_kind_var.get() == "value"
+        self._set_widget_enabled(self.grating_eff_value_entry, use_value)
+        self._set_widget_enabled(self.grating_eff_load_button, not use_value)
+        if use_value:
+            # Selecting the scalar drops any previously loaded curve.
+            self.grating_efficiency_curve = None
+            self.grating_efficiency_status_var.set("scalar value applied")
+        elif self.grating_efficiency_curve is not None:
+            name = getattr(self.grating_efficiency_source_path, "name", "curve")
+            self.grating_efficiency_status_var.set(f"curve applied: {name}")
+        else:
+            self.grating_efficiency_status_var.set("choose a CSV with Load CSV…")
+
+    WL_UNIT_TO_AA = {"AA": 1.0, "nm": 10.0, "um": 10000.0}
+
+    def _wl_to_aa(self, value):
+        """Convert an entered spectroscopy wavelength to Angstrom via the unit selector."""
+        return float(value) * self.WL_UNIT_TO_AA.get(self.wl_unit_var.get(), 1.0)
+
+    def _spectrum_geometry_lines(self, spectrum):
+        """Output lines: spectrum length in pixels, visible grating orders and
+        their start pixel vs the detector L/W, and the Horne optimal extraction
+        width."""
+        lines = []
+        try:
+            lo_aa = self._wl_to_aa(self.wlmin_var.get())
+            hi_aa = self._wl_to_aa(self.wlmax_var.get())
+            length_pix = float(self.det_length_var.get())
+            width_pix = float(self.det_width_var.get())
+            pixel_um = float(self.pixel_var.get())
+            focal_mm = float(self.focal_var.get())
+            mode = spectrum.attrs.get("spectroscopy_mode", "slit")
+        except (ValueError, KeyError, tk.TclError):
+            return lines
+        if length_pix <= 0 or width_pix <= 0:
+            return ["detector L/W       : must be > 0 to report spectrum geometry"]
+        plate_scale = 206265.0 * (pixel_um * 1e-3) / focal_mm  # arcsec/pixel
+
+        # Spectrum length in pixels over the requested wavelength range.
+        if mode == "slitless":
+            dispersion = float(spectrum.attrs.get("dispersion_aa_pix", 0.0))
+            spectrum_len = (hi_aa - lo_aa) / dispersion if dispersion > 0 else float("nan")
+        else:
+            resolution = float(self.resolution_var.get())
+            sampling = float(self.sampling_var.get())
+            # Å/pixel = (lambda/R)/sampling, so pixels = sampling*R*ln(hi/lo).
+            spectrum_len = sampling * resolution * np.log(hi_aa / lo_aa)
+        fits = "fits L" if spectrum_len <= length_pix else "EXCEEDS L"
+        lines.append(f"spectrum length   : {spectrum_len:.0f} px over {lo_aa:.0f}-{hi_aa:.0f} A "
+                     f"({mode}); detector L={length_pix:.0f}, W={width_pix:.0f} px -> {fits}")
+
+        # Visible diffraction orders (slitless / objective grating): the zero
+        # order (star) is at pixel 0; order m disperses lambda to pixel
+        # N = lambda[A] * L[mm] * n[l/mm] * m / (1e4 * p[um]) from the star.
+        grating_lines = float(self.grating_lines_var.get() or 0.0)
+        if mode == "slitless" and grating_lines > 0:
+            grating_distance = float(self.grating_distance_var.get())
+            lines.append("orders (from zero order at px 0, along L):")
+            for m in (1, 2, 3):
+                start = lo_aa * grating_distance * grating_lines * m / (1.0e4 * pixel_um)
+                end = hi_aa * grating_distance * grating_lines * m / (1.0e4 * pixel_um)
+                if start > length_pix:
+                    note = f"start px {start:.0f} > L={length_pix:.0f} -> off chip"
+                elif end > length_pix:
+                    note = f"px {start:.0f}-{end:.0f}, truncated at L={length_pix:.0f}"
+                else:
+                    note = f"px {start:.0f}-{end:.0f} on chip"
+                lines.append(f"  order {m}         : {note}")
+
+        # Horne (1986) optimal extraction: the noise-equivalent width of the
+        # variance-weighted extraction is 1/Integral(P^2 dx) = 2*sqrt(pi)*sigma
+        # for a Gaussian spatial profile of the (effective) seeing.
+        seeing = float(self.seeing_var.get())
+        sigma = seeing / 2.35482
+        horne_arcsec = 2.0 * np.sqrt(np.pi) * sigma
+        horne_pix = horne_arcsec / plate_scale if plate_scale > 0 else float("nan")
+        lines.append(f"Horne extraction  : optimal width {horne_arcsec:.2f} arcsec "
+                     f"({horne_pix:.1f} px), = 2*sqrt(pi)*sigma noise-equivalent (Horne 1986)")
+        if horne_pix > width_pix:
+            lines.append(f"  note            : optimal width {horne_pix:.1f} px exceeds detector W={width_pix:.0f}")
+        return lines
+
     def _build_mode_column(self, holder):
         f = self._section(holder, "CALCULATION")
         self.mode_var = self._var("mode", "photometry")
@@ -538,6 +685,7 @@ class ETCGUI(tk.Tk):
                   justify="left").grid(row=6, column=0, columnspan=2, sticky="w", pady=(3, 0))
 
         f = self._section(holder, "PHOTOMETRY")
+        self.photometry_box = f
         self.aperture_var = self._var("photometric_aperture_radius_arcsec", "1.0")
         self._entry(f, 0, "Aperture radius (arcsec):", self.aperture_var)
         self.source_geometry_var = self._var("source_geometry", "point")
@@ -557,10 +705,15 @@ class ETCGUI(tk.Tk):
                   justify="left").grid(row=5, column=0, columnspan=2, sticky="w", pady=(3, 0))
 
         f = self._section(holder, "SPECTROSCOPY")
+        self.spectroscopy_box = f
+        # Widgets that belong only to one mode; the other set is greyed out.
+        self._slit_widgets = []
+        self._slitless_widgets = []
         self.spectroscopy_mode_var = self._var("spectroscopy_mode", "slit")
         ttk.Label(f, text="Mode:").grid(row=0, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.spectroscopy_mode_var, state="readonly",
                      values=("slit", "slitless")).grid(row=0, column=1, sticky="ew")
+        self.spectroscopy_mode_var.trace_add("write", lambda *_: self._update_spectroscopy_mode_state())
         self.resolution_var = self._var("resolution_R", "10000")
         self.slit_var = self._var("slit_width_arcsec", "1.0")
         self.extract_var = self._var("extraction_height_arcsec", "1.0")
@@ -570,56 +723,92 @@ class ETCGUI(tk.Tk):
         self.slitless_lsf_var = self._var("slitless_intrinsic_fwhm_pix", "1.0")
         # A single grating groove density feeds both the slitless disperser
         # (Star Analyser dispersion) and the slit-spectrograph Littrow geometry
-        # helper below; the previous duplicate 'spectrograph grating l/mm'
-        # field is gone.
+        # helper below.
         self.grating_lines_var = self._var("grating_lines_mm", str(self._saved.get("slitless_grating_lines_mm", "0")))
         self.grating_distance_var = self._var("slitless_grating_distance_mm", "42.0")
         self.grating_efficiency_var = self._var("slitless_grating_efficiency", "1.0")
         self.grating_efficiency_path_var = self._var("grating_efficiency_curve_path", "")
+        self.grating_efficiency_kind_var = self._var("grating_efficiency_kind", "value")
         self.slit_orientation_var = self._var("slit_orientation", "parallactic")
         self.wlmin_var = self._var("wavelength_min_aa", "4000")
         self.wlmax_var = self._var("wavelength_max_aa", "10000")
         self.reference_wavelength_var = self._var("reference_wavelength_aa", "5500")
-        for row, label, var in [(1, "Slit resolving power R:", self.resolution_var), (2, "Slit width (arcsec):", self.slit_var),
-                                (3, "Extraction height (arcsec):", self.extract_var), (4, "Pixels / slit res. element:", self.sampling_var),
-                                (5, "Slitless cross-disp extraction:", self.slitless_width_var),
+        self.wl_unit_var = self._var("spectroscopy_wavelength_unit", "AA")
+
+        # Slit-only fields.
+        for row, label, var in [(1, "Slit resolving power R:", self.resolution_var),
+                                (2, "Slit width (arcsec):", self.slit_var),
+                                (3, "Extraction height (arcsec):", self.extract_var),
+                                (4, "Pixels / slit res. element:", self.sampling_var)]:
+            self._slit_widgets.append(self._labeled_entry(f, row, label, var))
+        # Slitless-only fields.
+        for row, label, var in [(5, "Slitless cross-disp extraction:", self.slitless_width_var),
                                 (6, "Slitless dispersion (A/pix):", self.slitless_dispersion_var),
                                 (7, "Slitless intrinsic FWHM (pix):", self.slitless_lsf_var),
-                                (8, "Grating lines/mm (0=manual):", self.grating_lines_var),
-                                (9, "Grating-sensor distance (mm):", self.grating_distance_var),
-                                (10, "Grating efficiency scalar (0-1):", self.grating_efficiency_var),
-                                (12, "Wavelength minimum (A):", self.wlmin_var), (13, "Wavelength maximum (A):", self.wlmax_var),
-                                (14, "S/N reference wavelength (A):", self.reference_wavelength_var)]:
-            self._entry(f, row, label, var)
-        # Optional wavelength-dependent grating efficiency from a two-column
-        # CSV (wavelength, efficiency 0-1); when loaded it overrides the scalar.
-        ttk.Label(f, text="Grating efficiency curve:").grid(row=11, column=0, sticky="w")
-        geff_row = ttk.Frame(f); geff_row.grid(row=11, column=1, sticky="ew")
-        geff_row.columnconfigure(0, weight=1)
+                                (9, "Grating-sensor distance (mm):", self.grating_distance_var)]:
+            self._slitless_widgets.append(self._labeled_entry(f, row, label, var))
+        # Shared: grating groove density.
+        self._labeled_entry(f, 8, "Grating lines/mm (0=manual):", self.grating_lines_var)
+
+        # Grating efficiency condensed to one row: [value/file] [scalar] [Load CSV].
+        ttk.Label(f, text="Grating efficiency:").grid(row=10, column=0, sticky="w")
+        geff_row = ttk.Frame(f); geff_row.grid(row=10, column=1, sticky="ew")
+        self.grating_eff_kind_combo = ttk.Combobox(geff_row, textvariable=self.grating_efficiency_kind_var,
+                                                    state="readonly", width=6, values=("value", "file"))
+        self.grating_eff_kind_combo.pack(side="left")
+        self.grating_eff_value_entry = ttk.Entry(geff_row, textvariable=self.grating_efficiency_var, width=6)
+        self.grating_eff_value_entry.pack(side="left", padx=(3, 0))
+        self.grating_eff_load_button = ttk.Button(geff_row, text="Load CSV…",
+                                                  command=self._choose_grating_efficiency_curve)
+        self.grating_eff_load_button.pack(side="left", padx=(3, 0))
         self.grating_efficiency_status_var = tk.StringVar(value="scalar")
-        ttk.Label(geff_row, textvariable=self.grating_efficiency_status_var, foreground="#1f4f82").grid(row=0, column=0, sticky="w")
-        ttk.Button(geff_row, text="Load CSV…", command=self._choose_grating_efficiency_curve).grid(row=0, column=1, padx=(3, 0))
-        ttk.Button(geff_row, text="Clear", command=self._clear_grating_efficiency_curve).grid(row=0, column=2, padx=(3, 0))
+        ttk.Label(f, textvariable=self.grating_efficiency_status_var, foreground="#1f4f82",
+                  wraplength=280).grid(row=11, column=0, columnspan=2, sticky="w")
+        self.grating_efficiency_kind_var.trace_add("write", lambda *_: self._update_grating_eff_state())
+
+        # Wavelength range + reference on one row, with a unit selector.
+        ttk.Label(f, text="Wavelengths:").grid(row=12, column=0, sticky="w")
+        wl_row = ttk.Frame(f); wl_row.grid(row=12, column=1, sticky="ew")
+        ttk.Label(wl_row, text="min").pack(side="left")
+        ttk.Entry(wl_row, textvariable=self.wlmin_var, width=6).pack(side="left", padx=(2, 5))
+        ttk.Label(wl_row, text="max").pack(side="left")
+        ttk.Entry(wl_row, textvariable=self.wlmax_var, width=6).pack(side="left", padx=(2, 5))
+        ttk.Label(wl_row, text="ref").pack(side="left")
+        ttk.Entry(wl_row, textvariable=self.reference_wavelength_var, width=6).pack(side="left", padx=(2, 5))
+        ttk.Combobox(wl_row, textvariable=self.wl_unit_var, state="readonly", width=4,
+                     values=("AA", "nm", "um")).pack(side="left")
+
+        # Slit orientation (slit-only) and the Littrow geometry helper.
         ttk.Label(f, text="Slit orientation:").grid(row=15, column=0, sticky="w")
-        ttk.Combobox(f, textvariable=self.slit_orientation_var, state="readonly",
-                     values=("parallactic", "fixed")).grid(row=15, column=1, sticky="ew")
+        slit_orient_combo = ttk.Combobox(f, textvariable=self.slit_orientation_var, state="readonly",
+                                         values=("parallactic", "fixed"))
+        slit_orient_combo.grid(row=15, column=1, sticky="ew")
+        self._slit_widgets.append(slit_orient_combo)
         self.spec_collimator_var = self._var("spectrograph_collimator_fl_mm", "130")
         self.spec_camera_var = self._var("spectrograph_camera_fl_mm", "130")
-        for row, label, var in [(17, "Collimator focal length (mm):", self.spec_collimator_var),
-                                (18, "Camera focal length (mm):", self.spec_camera_var)]:
-            self._entry(f, row, label, var)
-        ttk.Label(f, text="Slit-spectrograph geometry uses the single 'Grating lines/mm' field above.",
+        self._slit_widgets.append(self._labeled_entry(f, 17, "Collimator focal length (mm):", self.spec_collimator_var))
+        self._slit_widgets.append(self._labeled_entry(f, 18, "Camera focal length (mm):", self.spec_camera_var))
+        ttk.Label(f, text="Grating lines/mm above feeds both modes. R depends on slit width, "
+                          "collimator FL, grating and telescope FL — NOT the camera FL (it cancels in "
+                          "the Littrow equation; the camera FL sets only the pixel sampling of the "
+                          "resolution element). Collimator, camera and telescope are three distinct "
+                          "focal lengths.",
                   foreground="gray35", wraplength=280, justify="left").grid(row=16, column=0, columnspan=2, sticky="w")
-        ttk.Button(f, text="Compute R from geometry → fill R field",
-                   command=self._compute_slit_resolving_power).grid(row=19, column=0, columnspan=2, sticky="ew", pady=(3, 1))
+        compute_r_button = ttk.Button(f, text="Compute R from geometry → fill R field",
+                                      command=self._compute_slit_resolving_power)
+        compute_r_button.grid(row=19, column=0, columnspan=2, sticky="ew", pady=(3, 1))
+        self._slit_widgets.append(compute_r_button)
         self.spec_geometry_status_var = tk.StringVar(
             value="Littrow grating equation; uses telescope FL, slit width, seeing and the S/N reference wavelength. R stays editable.")
         ttk.Label(f, textvariable=self.spec_geometry_status_var, foreground="gray35",
                   wraplength=280, justify="left").grid(row=20, column=0, columnspan=2, sticky="w")
         self.clamp_r_var = self._var("clamp_r_to_geometry", "0")
-        ttk.Checkbutton(f, text="Clamp R to spectrograph geometry (engine-side sanity limit)",
-                        variable=self.clamp_r_var, onvalue="1", offvalue="0").grid(
-                        row=21, column=0, columnspan=2, sticky="w")
+        self.clamp_r_check = ttk.Checkbutton(f, text="Clamp R to spectrograph geometry (engine-side sanity limit)",
+                        variable=self.clamp_r_var, onvalue="1", offvalue="0")
+        self.clamp_r_check.grid(row=21, column=0, columnspan=2, sticky="w")
+        self._slit_widgets.append(self.clamp_r_check)
+        self._update_spectroscopy_mode_state()
+        self._update_grating_eff_state()
 #        ttk.Label(f, text="Slitless: a Star Analyser 100/200 is described by its grooves/mm and\n"
 #                          "grating-to-sensor distance, which set the dispersion; 0 lines/mm keeps the\n"
 #                          "manual A/pix. 'fixed' slit orientation applies the worst-case Filippenko\n"
@@ -693,23 +882,17 @@ class ETCGUI(tk.Tk):
 #            fg="white", activeforeground="white",
 #        ).grid(row=0, column=0, sticky="ew", pady=2)
 
+        # Run ETC and Exit aligned on one row.
+        button_row = ttk.Frame(f); button_row.grid(row=0, column=0, sticky="ew", pady=2)
+        button_row.columnconfigure(0, weight=1); button_row.columnconfigure(1, weight=1)
         self.run_etc_button = tk.Button(
-            f,
-            text="Run ETC",
-            command=self._run_etc,
-            bg="#22a447",
-            activebackground="#178134",
-            fg="white",
-            activeforeground="white",
-        )
-        self.run_etc_button.grid(row=0, column=0, sticky="ew", pady=2)
-            
+            button_row, text="Run ETC", command=self._run_etc,
+            bg="#22a447", activebackground="#178134", fg="white", activeforeground="white")
+        self.run_etc_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
         tk.Button(
-            f, text="Exit", command=self._on_exit,
-            bg="#c62828", activebackground="#8e1b1b",
-            fg="white", activeforeground="white",
-        ).grid(row=1, column=0, sticky="ew", pady=(14, 2))
-    
+            button_row, text="Exit", command=self._on_exit,
+            bg="#c62828", activebackground="#8e1b1b", fg="white", activeforeground="white",
+        ).grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
 
         f = self._section(holder, "OBSERVATORY STATUS")
@@ -718,29 +901,34 @@ class ETCGUI(tk.Tk):
                   foreground="#1f4f82").grid(row=0, column=0, sticky="w")
 
         f = self._section(holder, "TIME CONVERTER")
-        midnight = Time(datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00"), scale="utc").mjd
-        self.time_convert_input_kind_var = tk.StringVar(value="MJD")
-        self.time_convert_output_kind_var = tk.StringVar(value="ISO")
-        self.time_convert_input_var = tk.StringVar(value=f"{midnight:.5f}")
+        # Default input: the date/time at which the program started, in ISO.
+        start_iso = Time(self._program_start_utc, scale="utc")
+        start_iso.precision = 3
+        self.time_convert_input_kind_var = tk.StringVar(value="ISO")
+        self.time_convert_output_kind_var = tk.StringVar(value="MJD")
+        self.time_convert_input_var = tk.StringVar(value=start_iso.iso)
         self.time_convert_output_var = tk.StringVar()
-        ttk.Label(f, text="Input:").grid(row=0, column=0, sticky="w")
-        ttk.Entry(f, textvariable=self.time_convert_input_var, width=18).grid(row=0, column=1, sticky="ew")
-        ttk.Label(f, text="Input type:").grid(row=1, column=0, sticky="w")
-        ttk.Combobox(f, textvariable=self.time_convert_input_kind_var, values=("ISO", "MJD", "JD"),
-                     state="readonly", width=7).grid(row=1, column=1, sticky="w")
-        ttk.Label(f, text="Output type:").grid(row=2, column=0, sticky="w")
-        output_combo = ttk.Combobox(f, textvariable=self.time_convert_output_kind_var, values=("ISO", "MJD", "JD"),
-                                    state="readonly", width=7)
-        output_combo.grid(row=2, column=1, sticky="w")
+        # Wide, left-aligned input that fits a full ISOT string, with a Now
+        # button that fills the current date/time in the selected format.
+        input_row = ttk.Frame(f); input_row.grid(row=0, column=0, columnspan=2, sticky="ew")
+        input_row.columnconfigure(0, weight=1)
+        ttk.Entry(input_row, textvariable=self.time_convert_input_var, width=26,
+                  justify="left").grid(row=0, column=0, sticky="ew")
+        ttk.Button(input_row, text="Now", width=4,
+                   command=self._fill_time_now).grid(row=0, column=1, padx=(3, 0))
+        # Input / Output type selectors on one row.
+        types_row = ttk.Frame(f); types_row.grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 0))
+        ttk.Label(types_row, text="Input").pack(side="left")
+        ttk.Combobox(types_row, textvariable=self.time_convert_input_kind_var,
+                     values=("ISO", "ISOT", "MJD", "JD"), state="readonly", width=6).pack(side="left", padx=(2, 8))
+        ttk.Label(types_row, text="Output").pack(side="left")
+        output_combo = ttk.Combobox(types_row, textvariable=self.time_convert_output_kind_var,
+                                    values=("ISO", "ISOT", "MJD", "JD"), state="readonly", width=6)
+        output_combo.pack(side="left", padx=(2, 0))
         output_combo.bind("<<ComboboxSelected>>", lambda _event: self._convert_time_value())
-        ttk.Button(f, text="Convert", command=self._convert_time_value).grid(row=3, column=0, columnspan=2, sticky="ew", pady=(3, 1))
-        ttk.Label(f, text="").grid(row=4, column=0, sticky="w")
+        ttk.Button(f, text="Convert", command=self._convert_time_value).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(3, 1))
         output = ttk.Entry(f, textvariable=self.time_convert_output_var, state="readonly", justify="left")
-        output.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(3,0))
-#        self.time_convert_status_var = tk.StringVar(value="UTC scale.")
-#        ttk.Label(f, textvariable=self.time_convert_status_var, foreground="gray35", wraplength=220,
-#                  justify="left").grid(row=5, column=0, columnspan=2, sticky="w", pady=(3, 0))
-#        self._convert_time_value()
+        output.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(3, 0))
 
         f = self._section(holder, "GEOGRAPHIC COORDINATES")
         self.dms_input_var = tk.StringVar(value="45 24 28.1 N 11 52 24.1 E")
@@ -755,6 +943,26 @@ class ETCGUI(tk.Tk):
 #       ttk.Label(f, textvariable=self.dms_status_var, foreground="gray35", wraplength=220,
 #                  justify="left").grid(row=4, column=0, columnspan=2, sticky="w", pady=(3, 0))
 #        self._convert_dms_coordinates()
+
+        f = self._section(holder, "LENGTH CONVERTER")
+        self.length_input_var = tk.StringVar(value="1")
+        self.length_from_unit_var = tk.StringVar(value="m")
+        self.length_to_unit_var = tk.StringVar(value="ly")
+        self.length_output_var = tk.StringVar()
+        units = tuple(self.LENGTH_UNITS_TO_M.keys())
+        in_row = ttk.Frame(f); in_row.grid(row=0, column=0, columnspan=3, sticky="ew")
+        in_row.columnconfigure(0, weight=1)
+        ttk.Entry(in_row, textvariable=self.length_input_var, width=12).grid(row=0, column=0, sticky="ew")
+        ttk.Combobox(in_row, textvariable=self.length_from_unit_var, state="readonly", width=7,
+                     values=units).grid(row=0, column=1, padx=(3, 0))
+        ttk.Label(f, text="TO").grid(row=1, column=0, sticky="w", pady=(2, 0))
+        out_row = ttk.Frame(f); out_row.grid(row=2, column=0, columnspan=3, sticky="ew")
+        out_row.columnconfigure(0, weight=1)
+        ttk.Entry(out_row, textvariable=self.length_output_var, state="readonly", width=12).grid(row=0, column=0, sticky="ew")
+        ttk.Combobox(out_row, textvariable=self.length_to_unit_var, state="readonly", width=7,
+                     values=units).grid(row=0, column=1, padx=(3, 0))
+        ttk.Button(f, text="Convert", command=self._convert_length).grid(
+            row=3, column=0, columnspan=3, sticky="ew", pady=(3, 1))
 
         about = self._section(holder, "SPETC")
         ttk.Label(about, text="Spectro-Photometry\nExposure Time Calculator",
@@ -800,25 +1008,73 @@ class ETCGUI(tk.Tk):
             self.observatory_status_var.set(f"Observatory status unavailable: {exc}")
         self.after(60000, self._update_observatory_status)
 
+    # Length units expressed in metres (SI and astronomical).
+    LENGTH_UNITS_TO_M = {
+        "angstrom": 1.0e-10, "nm": 1.0e-9, "um": 1.0e-6, "mm": 1.0e-3, "cm": 1.0e-2,
+        "inch": 0.0254, "foot": 0.3048, "yard": 0.9144, "m": 1.0, "km": 1.0e3,
+        "mile": 1609.344, "ly": 9.4607304725808e15, "parsec": 3.0856775814913673e16,
+    }
+
+    def _convert_length(self):
+        """Convert a positive length between the listed units.
+
+        Negative input is made positive (abs).  Results in
+        [1e-5, 1e5] are shown in full decimal; outside that range in
+        exponential notation.
+        """
+        try:
+            value = abs(float(self.length_input_var.get()))
+            from_u = self.length_from_unit_var.get()
+            to_u = self.length_to_unit_var.get()
+            if from_u == to_u:
+                self.length_output_var.set("choose two different units")
+                return
+            metres = value * self.LENGTH_UNITS_TO_M[from_u]
+            result = metres / self.LENGTH_UNITS_TO_M[to_u]
+            self.length_input_var.set(f"{value:g}")  # reflect the abs()
+            if result == 0.0:
+                text = "0"
+            elif 1.0e-5 <= result <= 1.0e5:
+                text = f"{result:.10f}".rstrip("0").rstrip(".")
+            else:
+                text = f"{result:.6e}"
+            self.length_output_var.set(text)
+        except (ValueError, KeyError, ZeroDivisionError) as exc:
+            self.length_output_var.set(f"Conversion failed: {exc}")
+
+    def _fill_time_now(self):
+        """Fill the time-converter input with the current UTC in the input format."""
+        now = Time(datetime.now(timezone.utc), scale="utc")
+        kind = self.time_convert_input_kind_var.get()
+        if kind in ("ISO", "ISOT"):
+            now.precision = 3
+            self.time_convert_input_var.set(now.iso if kind == "ISO" else now.isot)
+        elif kind == "MJD":
+            self.time_convert_input_var.set(f"{now.mjd:.8f}")
+        else:
+            self.time_convert_input_var.set(f"{now.jd:.8f}")
+        self._convert_time_value()
+
     def _convert_time_value(self):
         try:
             value, kind = self.time_convert_input_var.get().strip(), self.time_convert_input_kind_var.get()
-            if kind == "ISO":
-                parsed = Time(value.replace("Z", ""), format="isot", scale="utc")
+            if kind in ("ISO", "ISOT"):
+                # astropy's 'iso' accepts both 'YYYY-MM-DD HH:MM:SS' and the
+                # 'T'-separated ISOT form after stripping a trailing Z.
+                parsed = Time(value.replace("Z", "").replace("T", " "), format="iso", scale="utc")
             elif kind == "MJD":
                 parsed = Time(float(value), format="mjd", scale="utc")
             else:
                 parsed = Time(float(value), format="jd", scale="utc")
             output_kind = self.time_convert_output_kind_var.get()
-            if output_kind == "ISO":
-                parsed.precision = 2
-                output = parsed.isot
+            if output_kind in ("ISO", "ISOT"):
+                parsed.precision = 3
+                output = parsed.iso if output_kind == "ISO" else parsed.isot
             elif output_kind == "MJD":
                 output = f"{parsed.mjd:.8f}"
             else:
                 output = f"{parsed.jd:.8f}"
             self.time_convert_output_var.set(output)
-            #self.time_convert_status_var.set("UTC scale")
         except Exception as exc:
             self.time_convert_output_var.set(f"Conversion failed: {exc}")
 
@@ -1164,14 +1420,14 @@ class ETCGUI(tk.Tk):
     def _compute_slit_resolving_power(self):
         try:
             seeing = float(self.seeing_var.get())
+            reference_aa = self._wl_to_aa(self.reference_wavelength_var.get())
             if self.seeing_scaling_var.get() == "1":
                 # With seeing scaling enabled the entered value is the zenith
                 # V seeing; the helper evaluates the Kolmogorov-scaled seeing
                 # at the S/N reference wavelength (zenith).
-                seeing = float(effective_seeing_arcsec(
-                    seeing, float(self.reference_wavelength_var.get()), 1.0))
+                seeing = float(effective_seeing_arcsec(seeing, reference_aa, 1.0))
             result = slit_spectrograph_resolving_power(
-                float(self.reference_wavelength_var.get()),
+                reference_aa,
                 float(self.grating_lines_var.get()),
                 float(self.spec_collimator_var.get()),
                 float(self.spec_camera_var.get()),
@@ -1250,17 +1506,11 @@ class ETCGUI(tk.Tk):
             self.grating_efficiency_curve = curve
             self.grating_efficiency_source_path = Path(path).resolve()
             self.grating_efficiency_path_var.set(str(self.grating_efficiency_source_path))
-            self.grating_efficiency_status_var.set(f"curve: {self.grating_efficiency_source_path.name}")
+            self.grating_efficiency_kind_var.set("file")  # applies the curve, greys the scalar
+            self.grating_efficiency_status_var.set(f"curve applied: {self.grating_efficiency_source_path.name}")
             self.status_var.set("Grating efficiency curve loaded (overrides the scalar).")
         except (OSError, ValueError) as exc:
             messagebox.showerror("Grating efficiency", str(exc))
-
-    def _clear_grating_efficiency_curve(self):
-        self.grating_efficiency_curve = None
-        self.grating_efficiency_source_path = None
-        self.grating_efficiency_path_var.set("")
-        self.grating_efficiency_status_var.set("scalar")
-        self.status_var.set("Grating efficiency reverted to the scalar value.")
 
     def _choose_qe_curve(self):
         """Load the detector QE from a two-column (wavelength, QE) CSV/text file."""
@@ -1514,8 +1764,14 @@ class ETCGUI(tk.Tk):
         self._refresh_star_list(); self._update_filter_display(); self._update_template_display(); self._update_combined_response_preview()
 
     def _on_calculation_mode_changed(self):
-        """Use the filter-free response by default for spectroscopy."""
-        if self.mode_var.get() == "spectroscopy" and self.filter_resp_data is not None:
+        """Use the filter-free response by default for spectroscopy, and grey
+        out the box (photometry or spectroscopy) that is not in use."""
+        photometry = self.mode_var.get() == "photometry"
+        if hasattr(self, "photometry_box"):
+            self._set_frame_enabled(self.photometry_box, photometry)
+        # The spectroscopy box (and its slit/slitless sub-state) is handled here.
+        self._update_spectroscopy_mode_state()
+        if not photometry and self.filter_resp_data is not None:
             try:
                 if "BLANK" in fcat.list_filter_labels(self.filter_resp_data):
                     self.band_var.set("BLANK")
@@ -2031,7 +2287,7 @@ class ETCGUI(tk.Tk):
         max_unsaturated_exptime = np.full(len(track["jd"]), np.nan)
         valid_indices = [i for i, x in enumerate(track["airmass_target"]) if np.isfinite(x)]
         spectra = {}
-        reference = float(self.reference_wavelength_var.get())
+        reference = self._wl_to_aa(self.reference_wavelength_var.get())
         resolution = float(self.resolution_var.get())
         slider_indices = self._slider_indices(valid_indices, selected_idx, maximum=12 if resolution >= 50000 else 25)
         label = "Required exposure [s]" if target_snr is not None else f"S/N at {reference:.0f} Å"
@@ -2084,7 +2340,7 @@ class ETCGUI(tk.Tk):
             max_unsaturated_exptime[i] = reference_spectrum.iloc[ref_index]["max_unsaturated_exptime_s"]
             if i in slider_indices:
                 full_args = list(args)
-                full_args[4] = (float(self.wlmin_var.get()), float(self.wlmax_var.get()))
+                full_args[4] = (self._wl_to_aa(self.wlmin_var.get()), self._wl_to_aa(self.wlmax_var.get()))
                 spectra[i] = calculator.compute_spectroscopy(*full_args[:3], real_texp, *full_args[4:],
                                                              **transform_kwargs)
         return values, spectra, slider_indices, label, saturation, peak_e, max_unsaturated_exptime
@@ -2232,7 +2488,25 @@ class ETCGUI(tk.Tk):
                     f"instrumental {result['instrumental_response_magnitude']:.3f} ({self.band_var.get()})",
                     f"sky used          : {result['sky_mag_arcsec2']:.2f} mag/arcsec2"]
                     + self._template_colour_lines())
-                frame = pd.DataFrame([result]); self._display_table(frame, "mag"); self.result_df = frame
+                # Magnitude sweep: the same configuration at target +/- 1..7 mag,
+                # shown greyed under a separator below the selected result.
+                sweep_rows = []
+                geometry_kwargs = self._source_geometry_kwargs()
+                transform_kwargs = self._source_transform_kwargs()
+                for offset in (-7, -6, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7):
+                    try:
+                        sweep_rows.append(selected_calculator.compute_photometry_single(
+                            self.star_spec, observing_band, self.qe_curve, target_mag + offset, exposure_used,
+                            reference_profile.zero_point_jy, reference_band, self.selected_star.mv0, visual_band,
+                            visual_profile.zero_point_jy, observing_profile.zero_point_jy,
+                            reference_profile.detector_type, visual_profile.detector_type,
+                            observing_profile.detector_type, **geometry_kwargs, **transform_kwargs))
+                    except (ValueError, KeyError):
+                        continue
+                frame = pd.DataFrame([result] + sweep_rows)
+                self._display_table(frame, "mag", grey_from_row=1 if sweep_rows else None,
+                                    separator_before=1 if sweep_rows else None)
+                self.result_df = frame
                 plot_args = ("photometry", track, values, label, idx, self.band_var.get())
                 snr_values = values if target_snr is None else np.where(np.isfinite(values), target_snr, np.nan)
                 exposure_values = np.where(np.isfinite(values), texp, np.nan) if target_snr is None else values
@@ -2256,7 +2530,7 @@ class ETCGUI(tk.Tk):
                     visual_profile.zero_point_jy, reference_profile.detector_type, visual_profile.detector_type,
                     texp, target_snr, idx)
                 spectrum = spectra[idx]
-                reference_wl = float(self.reference_wavelength_var.get())
+                reference_wl = self._wl_to_aa(self.reference_wavelength_var.get())
                 ref_row = spectrum.iloc[int(np.argmin(np.abs(spectrum["wavelength_aa"].to_numpy() - reference_wl)))]
                 resel_pixels = float(spectrum.attrs["n_pixels_per_resel"])
                 self._update_stack_plan(target_snr, float(ref_row["photons_source_es"]),
@@ -2283,7 +2557,8 @@ class ETCGUI(tk.Tk):
                     f"saturation at ref : {ref_row['saturation_flag']}, max single frame "
                     f"{float(ref_row['max_unsaturated_exptime_s']):.1f} s",
                     f"sky used          : {spectrum.attrs['sky_mag_arcsec2']:.2f} mag/arcsec2"]
-                    + self._template_colour_lines() + self._rv_dispersion_lines())
+                    + self._template_colour_lines() + self._rv_dispersion_lines()
+                    + self._spectrum_geometry_lines(spectrum))
                 self._display_table(spectrum, "wavelength_aa"); self.result_df = spectrum
                 plot_args = ("spectroscopy", track, spectra, values, label, idx, slider_indices)
                 snr_values = values if target_snr is None else np.where(np.isfinite(values), target_snr, np.nan)
@@ -2294,7 +2569,7 @@ class ETCGUI(tk.Tk):
                     visual_profile.zero_point_jy, reference_profile.detector_type, visual_profile.detector_type,
                     saturation_flags=saturation, peak_e_values=peak_e,
                     max_unsaturated_exptime_values=max_unsaturated,
-                    reference_wavelength_aa=float(self.reference_wavelength_var.get()))
+                    reference_wavelength_aa=self._wl_to_aa(self.reference_wavelength_var.get()))
                 selected_saturation = saturation[idx]
             horizon = self._current_horizon()
             if plot_args[0] == "photometry":
@@ -2573,11 +2848,19 @@ class ETCGUI(tk.Tk):
         ("sky_subtraction_factor", "Sky-sub ×"),
     )
 
-    def _display_table(self, frame, xcol):
+    def _display_table(self, frame, xcol, grey_from_row=None, separator_before=None):
+        """Render the result frame in the tree.
+
+        ``grey_from_row`` greys every row from that index on (the photometry
+        magnitude sweep); ``separator_before`` inserts a dashed divider row
+        just before that index.
+        """
         self._ensure_results_window()
         available = [(key, heading) for key, heading in self._RESULT_COLUMNS if key in frame.columns]
         columns = tuple(key for key, _ in available)
         self.tree.configure(columns=columns)
+        self.tree.tag_configure("sweep", foreground="#8a8a8a")
+        self.tree.tag_configure("separator", foreground="#b0b0b0")
         for key, heading in available:
             if key == "mag":
                 heading = f"Magnitude [{self.mag_system_var.get()}]"
@@ -2585,9 +2868,12 @@ class ETCGUI(tk.Tk):
             self.tree.column(key, width=118 if key in (xcol, "saturation_flag") else 105,
                              minwidth=70, anchor="e")
         self.tree.delete(*self.tree.get_children())
-        for _, row in frame.iterrows():
+        for position, (_, row) in enumerate(frame.iterrows()):
+            if separator_before is not None and position == separator_before:
+                self.tree.insert("", "end", values=["─" * 6 for _ in columns], tags=("separator",))
+            tags = ("sweep",) if grey_from_row is not None and position >= grey_from_row else ()
             self.tree.insert("", "end",
-                             values=[self._format_table_value(row[key]) for key in columns])
+                             values=[self._format_table_value(row[key]) for key in columns], tags=tags)
 
     def _open_plot(self):
         if self.plot_window is None or not self.plot_window.winfo_exists():

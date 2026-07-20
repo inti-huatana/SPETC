@@ -252,7 +252,7 @@ class ETCGUI(tk.Tk):
         self._entry(f, 0, "Target name (SIMBAD, optional):", self.target_name_var)
         ttk.Button(f, text="Resolve name", command=self._resolve_target_name).grid(
             row=1, column=0, columnspan=2, sticky="ew", pady=(2, 1))
-        self.target_resolution_status = tk.StringVar(value="Enter a name and press Resolve name to query SIMBAD.")
+        self.target_resolution_status = tk.StringVar(value="Resolve the name via SIMBAD query")
         ttk.Label(f, textvariable=self.target_resolution_status, foreground="gray35", wraplength=320,
                   justify="left").grid(row=2, column=0, columnspan=2, sticky="w")
         self._entry(f, 3, "RA (deg or hh:mm:ss):", self.ra_var)
@@ -285,10 +285,10 @@ class ETCGUI(tk.Tk):
         self.ebv_var = self._var("ebv_mag", "0")
         self._entry(f, 10, "Radial velocity (km/s):", self.radial_velocity_var)
         self._entry(f, 11, "Reddening E(B-V) (mag):", self.ebv_var)
-        ttk.Label(f, text="Target RV shifts the template by (1+v/c); E(B-V) reddens it with "
-                          "CCM89 (R_V=3.1). Applied to the template, but properties of the target.",
-                  foreground="gray35", wraplength=320, justify="left").grid(
-                  row=12, column=0, columnspan=2, sticky="w", pady=(2, 0))
+#        ttk.Label(f, text="Target RV shifts the template by (1+v/c); E(B-V) reddens it with "
+#                          "CCM89 (R_V=3.1)",
+#                  foreground="gray35", wraplength=320, justify="left").grid(
+#                  row=12, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
     def _build_instrument_column(self, holder):
         f = self._section(holder, "TELESCOPE AND DETECTOR")
@@ -338,9 +338,9 @@ class ETCGUI(tk.Tk):
         ttk.Label(sensor_row, text=" channel:").grid(row=0, column=1)
         ttk.Combobox(sensor_row, textvariable=self.osc_channel_var, state="readonly", width=4,
                      values=("R", "G", "B")).grid(row=0, column=2, sticky="w")
-        ttk.Label(f, text="osc: single Bayer channel (R/B 1/4, G 1/2 of the pixels). Use the"
-                          " channel's effective QE (sensor QE x CFA dye) as the QE curve.",
-                  foreground="gray35", wraplength=300, justify="left").grid(row=18, column=0, columnspan=2, sticky="w")
+#        ttk.Label(f, text="osc: single Bayer channel (R/B 1/4, G 1/2 of the pixels). Use the"
+#                          " channel's effective QE (sensor QE x CFA dye) as the QE curve.",
+#                  foreground="gray35", wraplength=300, justify="left").grid(row=18, column=0, columnspan=2, sticky="w")
         self.gain_table_path_var = self._var("gain_table_path", "")
         self.gain_setting_var = tk.StringVar(value="")
         self.gain_table_rows = []
@@ -352,9 +352,9 @@ class ETCGUI(tk.Tk):
         self.gain_setting_combo.grid(row=0, column=0, sticky="ew")
         self.gain_setting_combo.bind("<<ComboboxSelected>>", lambda _event: self._apply_gain_setting())
         ttk.Button(gain_row, text="Browse…", command=self._choose_gain_table).grid(row=0, column=1, padx=(3, 0))
-        ttk.Label(f, text="Gain table rows: setting, e-/ADU, read noise e-, full well e-. Selecting a"
-                          " setting fills the three detector fields.",
-                  foreground="gray35", wraplength=300, justify="left").grid(row=16, column=0, columnspan=2, sticky="w")
+#        ttk.Label(f, text="Gain table rows: setting, e-/ADU, read noise e-, full well e-. Selecting a"
+#                          " setting fills the three detector fields.",
+#                  foreground="gray35", wraplength=300, justify="left").grid(row=16, column=0, columnspan=2, sticky="w")
 
         f = self._section(holder, "ATMOSPHERE / SKY")
         self.seeing_var = self._var("seeing_arcsec", "0.8")
@@ -376,9 +376,9 @@ class ETCGUI(tk.Tk):
                                     values=tuple(str(i) for i in range(1, 10)))
         bortle_combo.grid(row=7, column=1, sticky="ew")
         bortle_combo.bind("<<ComboboxSelected>>", lambda _event: self._apply_bortle_preset())
-        ttk.Label(f, text="sqm mode: your zenith SQM reading sets the V sky; band colours and the"
-                          " Moon model are applied on top. Bortle preset fills a typical SQM.",
-                  foreground="gray35", wraplength=300, justify="left").grid(row=8, column=0, columnspan=2, sticky="w")
+#        ttk.Label(f, text="sqm mode: your zenith SQM reading sets the V sky; band colours and the"
+#                          " Moon model are applied on top. Bortle preset fills a typical SQM.",
+#                  foreground="gray35", wraplength=300, justify="left").grid(row=8, column=0, columnspan=2, sticky="w")
         self.psf_model_var = self._var("psf_model", "gaussian")
         self.moffat_beta_var = self._var("moffat_beta", "2.5")
         self.seeing_scaling_var = self._var("seeing_wavelength_scaling", "0")
@@ -387,9 +387,9 @@ class ETCGUI(tk.Tk):
                         onvalue="1", offvalue="0").grid(row=9, column=0, columnspan=2, sticky="w")
         self.extra_background_var = self._var("extra_background_e_s_pixel", "0")
         self._entry(f, 10, "Extra background (e-/s/pixel):", self.extra_background_var)
-        ttk.Label(f, text="Catch-all background per pixel: detector glow, stray/scattered light, "
-                          "ghosting. 0 = none.", foreground="gray35", wraplength=300,
-                  justify="left").grid(row=11, column=0, columnspan=2, sticky="w")
+#        ttk.Label(f, text="Catch-all background per pixel: detector glow, stray/scattered light, "
+#                          "ghosting. 0 = none.", foreground="gray35", wraplength=300,
+#                  justify="left").grid(row=11, column=0, columnspan=2, sticky="w")
         self.guiding_rms_var = self._var("guiding_rms_arcsec", "0")
         self._entry(f, 12, "Guiding rms (arcsec, 0=perfect):", self.guiding_rms_var)
         self.telluric_var = self._var("include_telluric_bands", "0")
@@ -398,10 +398,10 @@ class ETCGUI(tk.Tk):
                         row=13, column=0, columnspan=2, sticky="w")
         self.sky_annulus_var = self._var("sky_annulus_pixels", "0")
         self._entry(f, 14, "Sky annulus pixels (0=ideal):", self.sky_annulus_var)
-        ttk.Label(f, text="Guiding rms adds image-motion blur to the seeing. Sky annulus: pixels "
-                          "used to measure the background; a finite value adds the (1+n_pix/n_sky) "
-                          "sky-subtraction noise.", foreground="gray35", wraplength=300,
-                  justify="left").grid(row=15, column=0, columnspan=2, sticky="w")
+#        ttk.Label(f, text="Guiding rms adds image-motion blur to the seeing. Sky annulus: pixels "
+#                          "used to measure the background; a finite value adds the (1+n_pix/n_sky) "
+#                          "sky-subtraction noise.", foreground="gray35", wraplength=300,
+#                  justify="left").grid(row=15, column=0, columnspan=2, sticky="w")
         ttk.Label(f, text="PSF model:").grid(row=3, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.psf_model_var, state="readonly",
                      values=("gaussian", "moffat")).grid(row=3, column=1, sticky="ew")
@@ -518,7 +518,7 @@ class ETCGUI(tk.Tk):
         ttk.Label(f, textvariable=self.spec_geometry_status_var, foreground="gray35",
                   wraplength=280, justify="left").grid(row=20, column=0, columnspan=2, sticky="w")
         self.clamp_r_var = self._var("clamp_r_to_geometry", "0")
-        ttk.Checkbutton(f, text="Clamp R to spectrograph geometry (engine-side sanity limit)",
+        ttk.Checkbutton(f, text="Clamp R to spectrograph geometry",
                         variable=self.clamp_r_var, onvalue="1", offvalue="0").grid(
                         row=21, column=0, columnspan=2, sticky="w")
 #        ttk.Label(f, text="Slitless: a Star Analyser 100/200 is described by its grooves/mm and\n"

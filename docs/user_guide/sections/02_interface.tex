@@ -2,6 +2,19 @@
 
 The window is organised in five columns, left to right.
 
+\subsection{Session}
+\label{sec:session}
+
+At the top of the first column the \textbf{SESSION} box names an output
+directory. It is pre-filled with \code{spetc\_YYYYMMDDThhmm} from the
+current time (editable). Pressing \textsf{Create new session} makes
+\code{output/<session name>/} and, from that moment, every run records into
+it: the configuration (\code{config.json}), the selected-time result and the
+full time series as timestamped CSVs, and the scientific plots as PNG. A
+dialog confirms that recording has started. Until a session is created,
+nothing is auto-recorded (you can still export manually), and the save
+dialogs default to the session directory once one exists.
+
 \subsection{Observation, site and target}
 \label{sec:obs-site-target}
 
@@ -45,8 +58,13 @@ the program works without them.
 \subsection{Telescope, detector and conditions}
 
 The \textbf{Telescope} box holds only the optics: primary diameter, central
-obstruction, focal length, scalar optics throughput (excluding QE), and an
-optional calibrated instrument-response curve with its wavelength unit. The
+obstruction, focal length, scalar optics throughput (excluding QE), and,
+on the row below it, an optional calibrated instrument-response curve
+(\textsf{Browse} plus a wavelength-unit selector). The scalar throughput
+and the calibrated response are \emph{mutually exclusive}: loading a
+response curve greys the scalar field (and the engine uses the curve
+alone, so the two are never multiplied together), and clearing the curve
+restores the scalar. The
 separate \textbf{Detector} box holds pixel size, gain, full well, ADC bit
 depth, read noise and dark current; the detector dimensions
 \textbf{L$\times$W} in pixels (length along dispersion, width across it,
@@ -54,23 +72,36 @@ both $>0$, default $1024\times1024$) used to check whether a spectrum and
 its diffraction orders fit on the chip; a \textbf{Load QE CSV} button that reads
 the detector quantum efficiency from a two-column (wavelength, QE) file (the
 status beside it shows the loaded file, or \code{qe.dat} loaded by default);
-the QE wavelength unit; the optional calibrated slit resolving-power curve;
-the \textbf{sensor type} — \code{monochrome} for a mono CCD/CMOS, or
-\code{color} for a one-shot-colour (Bayer) sensor read one channel at a
-time, with the R/G/B channel selector (greyed out for a monochrome sensor);
-aperture rates and pixel counts scale by the channel's Bayer fill fraction,
-saturation stays per physical pixel, and the QE curve should be that
-channel's effective QE (sensor QE $\times$ colour-filter dye). At the end of
+the QE wavelength unit; the \textbf{sensor-type} row --- a
+\code{CCD}/\code{CMOS} technology selector, a compact \code{mono}/\code{color}
+selector, and a \textbf{CH:} R/G/B channel selector (greyed out for a mono
+sensor) --- where \code{mono} is a monochrome CCD/CMOS and \code{color} is a
+one-shot-colour (Bayer) sensor read one channel at a time; aperture rates
+and pixel counts scale by the channel's Bayer fill fraction, saturation
+stays per physical pixel, and the QE curve should be that channel's
+effective QE (sensor QE $\times$ colour-filter dye). A
+\textbf{non-linearity limit} field (ADU) marks where the detector's
+response stops being linear: leave it empty to default to the ADC ceiling
+$2^{\text{bits}}$ (so nothing is flagged), or enter any
+$0 < \text{value} \le 2^{\text{bits}}$; counts above it but below hard
+saturation are flagged \code{NON\_LIN} in the SAT column, and the outputs
+tab reports how many frames are linear, non-linear or saturated (the old,
+meaningless \code{BOTH} joint flag is now the explicit \code{FW+ADC}). At
+the end of
 the Detector box the \textbf{Save profile} / \textbf{Load profile} buttons
 bundle the whole telescope + detector + QE + response set into a portable
 JSON. A \textbf{CMOS gain table} (a text file with one row per gain
 setting: setting, e$^-$/ADU, read noise, full well — published by camera
 makers and measured on PhotonsToPhotos): pick the setting and the three
-detector fields fill consistently; seeing FWHM; the sky-background mode
+detector fields fill consistently; the gain-table row is active only when
+the sensor technology is \code{CMOS}, and greyed out for a \code{CCD}.
+Then: seeing FWHM; the sky-background mode
 (\code{ing} = physical night/twilight/day model, \code{fixed\_ab} = your
 own observed sky surface brightness, \code{sqm} = your \textbf{zenith SQM
-reading} in $V$ mag/arcsec$^2$, with a \textbf{Bortle class} preset that
-fills a typical value; band colours and the Moon model are applied on
+reading} in $V$ mag/arcsec$^2$; a single \textbf{sky mag / SQM mag} field
+at the top of the box carries the value for both \code{fixed\_ab} and
+\code{sqm} modes, with the \textbf{Bortle class} preset just below it to
+fill a typical value; band colours and the Moon model are applied on
 top); and the \textbf{PSF model} (\code{gaussian} or \code{moffat} with
 its $\beta$; Moffat reproduces the wings of real star images and is
 recommended); an optional \textbf{seeing-scaling} checkbox that makes the
@@ -109,10 +140,12 @@ enter stays the \emph{total} integrated magnitude), and the optional
 \textbf{comparison-star magnitude} for differential photometry — the
 mmag-per-frame precision appears in the label below. The spectroscopy
 panel holds the resolving power, slit width, extraction height, sampling,
-the slitless parameters (Sect.~\ref{sec:spec-guide}), the \textbf{WL
-min/max/ref} on one row with an \textbf{AA/nm/um} unit selector, the
-\textbf{slit orientation} (\code{parallactic} or \code{fixed}), and the
-grating efficiency. The fields of the mode you are not using are greyed
+the optional \textbf{calibrated slit resolving-power curve} $R(\text{slit
+width})$ (moved here from the detector box, since it belongs to the
+spectroscopic optics), the slitless parameters
+(Sect.~\ref{sec:spec-guide}), the \textbf{WL min/max/ref} on one row with
+an \textbf{AA/nm/um} unit selector, the \textbf{slit orientation}
+(\code{parallactic} or \code{fixed}), and the grating efficiency. The fields of the mode you are not using are greyed
 out: choose \code{slit} and the slitless fields disable, choose
 \code{slitless} and the slit fields disable. Likewise, choosing photometry
 in the CALCULATION box greys the whole SPECTROSCOPY box, and choosing
@@ -136,17 +169,22 @@ Two independent filters: the \textbf{reference} filter, in which your
 magnitude is expressed (Vega or AB), and the \textbf{observing} filter,
 physically in the beam for both photometry and spectroscopy (spectroscopy
 defaults to \code{BLANK}, the unfiltered response). Besides the normal
-photometric filters (each a \code{_Vega}/\code{_AB} profile pair), the
+photometric filters (each a \code{\_Vega}/\code{\_AB} profile pair), the
 selector also lists single-file \emph{instrumental} passbands that have no
 magnitude of their own and are calibrated on the AB scale: \code{BLANK}
 (unfiltered), \code{DARK} (opaque) and neutral-density filters
 \code{ND25}, \code{ND50}, … Drop their \code{.xml} into the filters
 directory and list them in \code{filters.list} to have them appear. The panel previews the
 observing transmission curve with its pivot wavelength, width and zero
-point; the template selector searches the catalogue by name and previews
+point; the template selector searches the catalogue by name (showing five
+rows at a time) and previews
 the selected flux distribution over the fixed \SIrange{3000}{9000}{\angstrom}
 optical window (so every template is directly comparable); \textsf{Validate
 V and B$-$V} checks the template's synthetic colours against the catalogue.
+Immediately below the template box is the \textbf{system-response} preview
+(telescope $\times$ optics $\times$ QE $\times$ observing filter), which
+now sits in this same column next to the template it modifies rather than
+in the instrument column.
 The \textbf{radial velocity} and \textbf{E(B$-$V)} that transform the
 template are entered in the \emph{target} box (first column,
 Sect.~\ref{sec:obs-site-target}), because they are properties of the

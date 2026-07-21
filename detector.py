@@ -100,7 +100,7 @@ class Detector:
 
     def __init__(self, pixel_size_um, gain_e_adu, full_well_e, bit_depth,
                  read_noise_e=5.0, dark_current_e_s_pix=0.0,
-                 sensor_type="mono", osc_channel="G"):
+                 sensor_type="mono", osc_channel="G", nonlinearity_limit_adu=None):
         self.pixel_size_um = pixel_size_um
         self.gain_e_adu = gain_e_adu
         self.full_well_e = full_well_e
@@ -121,6 +121,18 @@ class Detector:
             raise ValueError("OSC channel must be R, G, or B.")
         self.max_adu = 2**bit_depth - 1
         self.max_electrons = self.max_adu * gain_e_adu
+        # Non-linearity ceiling in ADU: counts above it (but below hard
+        # saturation) are flagged NON_LIN.  Default = 2^bits (the ADC ceiling),
+        # so nothing is flagged non-linear unless a lower limit is given.
+        adc_ceiling = 2**bit_depth
+        if nonlinearity_limit_adu in (None, ""):
+            self.nonlinearity_limit_adu = adc_ceiling
+        else:
+            value = float(nonlinearity_limit_adu)
+            if not 0.0 < value <= adc_ceiling:
+                raise ValueError(f"Non-linearity limit must satisfy 0 < value <= {adc_ceiling} ADU.")
+            self.nonlinearity_limit_adu = value
+        self.nonlinearity_limit_e = self.nonlinearity_limit_adu * gain_e_adu
 
     @property
     def channel_fill_fraction(self):
@@ -191,10 +203,17 @@ class Detector:
     def saturation_flag(self, counts_e_array):
         """Return explicit full-well/ADC saturation flags before clipping."""
         counts = np.asarray(counts_e_array, dtype=float)
+        adu = counts / self.gain_e_adu
         full_well = counts >= self.full_well_e
-        adc = counts / self.gain_e_adu >= self.max_adu
-        flags = np.where(full_well & adc, "BOTH",
-                         np.where(full_well, "FULL_WELL", np.where(adc, "ADC", "NONE")))
+        adc = adu >= self.max_adu
+        saturated = full_well | adc
+        # Non-linear regime: above the non-linearity ceiling but not yet
+        # hard-saturated.  "FW+ADC" replaces the old, meaningless "BOTH".
+        nonlin = (adu >= self.nonlinearity_limit_adu) & ~saturated
+        flags = np.where(full_well & adc, "FW+ADC",
+                         np.where(full_well, "FULL_WELL",
+                                  np.where(adc, "ADC",
+                                           np.where(nonlin, "NON_LIN", "NONE"))))
         return str(flags.item()) if flags.ndim == 0 else flags
     
     def read_noise_electrons(self, readout_speed='slow'):

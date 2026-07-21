@@ -415,28 +415,55 @@ class ETCGUI(tk.Tk):
         self.eff_var = self._var("throughput_excluding_qe", "0.70")
         self.focal_var = self._var("focal_length_mm", "2000")
         self.throughput_path_var = self._var("throughput_curve_path", "")
-        self.throughput_unit_var = self._var("throughput_wavelength_unit", "Angstrom")
+        self.throughput_unit_var = self._var("throughput_wavelength_unit", "AA")
         for row, label, var in [(0, "Primary diameter (mm):", self.diam_var),
                                 (1, "Obstruction diameter (mm):", self.obstruct_var),
                                 (2, "Focal length (mm):", self.focal_var)]:
             self._entry(f, row, label, var)
         # Optics throughput moved one row down (now below the focal length).
-        ttk.Label(f, text="Optics throughput, no QE:").grid(row=3, column=0, sticky="w")
+        ttk.Label(f, text="Optics throughput:").grid(row=3, column=0, sticky="w")
         self.throughput_scalar_entry = ttk.Entry(f, textvariable=self.eff_var, width=20)
         self.throughput_scalar_entry.grid(row=3, column=1, sticky="ew", pady=1)
         # Calibrated optics response: only a Browse button plus the wavelength
         # unit selector (no path field, no unit label).  A loaded response
         # curve and the scalar throughput are mutually exclusive.
-        ttk.Label(f, text="Calibrated optics response:").grid(row=4, column=0, sticky="w")
-        curve_row = ttk.Frame(f); curve_row.grid(row=4, column=1, sticky="ew")
-        self.throughput_browse_button = ttk.Button(curve_row, text="Browse…", command=self._choose_throughput_curve)
-        self.throughput_browse_button.grid(row=0, column=0, sticky="w")
-        ttk.Combobox(curve_row, textvariable=self.throughput_unit_var, state="readonly",
-                     values=("Angstrom", "nm", "um"), width=8).grid(row=0, column=1, padx=(4, 0))
-        ttk.Button(curve_row, text="Clear", command=self._clear_throughput_curve).grid(row=0, column=2, padx=(4, 0))
+
+
+        # ttk.Label(f, text="OptTroug File:").grid(row=4, column=0, sticky="w")
+        # curve_row = ttk.Frame(f); curve_row.grid(row=4, column=1, sticky="ew")
+        # self.throughput_browse_button = ttk.Button(curve_row, text="Browse…", command=self._choose_throughput_curve)
+        # self.throughput_browse_button.grid(row=0, column=0, sticky="w")
+        # ttk.Combobox(curve_row, textvariable=self.throughput_unit_var, state="readonly",
+                     # values=("angstrom", "nm", "um"), width=8).grid(row=0, column=1, padx=(4, 0))
+        # ttk.Button(curve_row, text="Clear", command=self._clear_throughput_curve).grid(row=0, column=2, padx=(4, 0))
+        # self.throughput_curve_status = tk.StringVar(value="response curve: none (using scalar)")
+        # ttk.Label(f, textvariable=self.throughput_curve_status, foreground="#1f4f82",
+                  # wraplength=300).grid(row=5, column=0, columnspan=2, sticky="w")
+
+
+        curve_row = ttk.Frame(f)
+        curve_row.grid(row=4, column=0, columnspan=2, sticky="w")
+        
+        ttk.Label(curve_row, text="OptThroughput file:").grid(row=0, column=0, sticky="w")
+        
+        self.throughput_browse_button = ttk.Button(
+            curve_row, text="Browse…", command=self._choose_throughput_curve
+        )
+        self.throughput_browse_button.grid(row=0, column=1, sticky="w", padx=(4, 0))
+        
+        ttk.Combobox(
+            curve_row, textvariable=self.throughput_unit_var, state="readonly",
+            values=("AA", "nm", "um"), width=8
+        ).grid(row=0, column=2, padx=(4, 0))
+        
+        ttk.Button(
+            curve_row, text="Clear", command=self._clear_throughput_curve
+        ).grid(row=0, column=3, padx=(4, 0))
         self.throughput_curve_status = tk.StringVar(value="response curve: none (using scalar)")
         ttk.Label(f, textvariable=self.throughput_curve_status, foreground="#1f4f82",
                   wraplength=300).grid(row=5, column=0, columnspan=2, sticky="w")
+    
+
 
         # ----------------------------- DETECTOR ----------------------------
         f = self._section(holder, "DETECTOR")
@@ -446,7 +473,7 @@ class ETCGUI(tk.Tk):
         self.bitdepth_var = self._var("bit_depth", "16")
         self.readnoise_var = self._var("read_noise_e", "5.0")
         self.dark_var = self._var("dark_current_e_s_pix", "0.0")
-        self.qe_unit_var = self._var("qe_wavelength_unit", "Angstrom")
+        self.qe_unit_var = self._var("qe_wavelength_unit", "AA")
         for row, label, var in [(0, "Pixel size (um):", self.pixel_var), (1, "Gain (e-/ADU):", self.gain_var),
                                 (2, "Full well (e-):", self.fullwell_var), (3, "ADC bits:", self.bitdepth_var),
                                 (4, "Read noise (e- rms/pix):", self.readnoise_var),
@@ -473,7 +500,7 @@ class ETCGUI(tk.Tk):
         ttk.Button(qe_row, text="Load QE CSV…", command=self._choose_qe_curve).grid(row=0, column=1, padx=(3, 0))
         ttk.Label(f, text="QE wavelength unit:").grid(row=8, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.qe_unit_var, state="readonly",
-                     values=("Angstrom", "nm", "um"), width=10).grid(row=8, column=1, sticky="ew")
+                     values=("AA", "nm", "um"), width=10).grid(row=8, column=1, sticky="ew")
         # Non-linearity limit in ADU: the maximum count before the response
         # departs from linear.  Empty means the ADC ceiling (2^bits), i.e. no
         # non-linear regime is flagged; a value 0 < v <= 2^bits flags counts
@@ -547,21 +574,47 @@ class ETCGUI(tk.Tk):
         # in the system implied by the selected sky-background mode.
         self._entry(f, 2, "Sky mag / SQM mag (mag/arcsec2):", self.sky_var)
         self.sqm_var = self.sky_var  # merged input; sqm mode reads the same value
+
+
         self.bortle_var = tk.StringVar(value="")
-        ttk.Label(f, text="Bortle class preset:").grid(row=5, column=0, sticky="w")
+        ttk.Label(f, text="Bortle class preset:").grid(row=3, column=0, sticky="w")
         bortle_combo = ttk.Combobox(f, textvariable=self.bortle_var, state="readonly", width=6,
                                     values=tuple(str(i) for i in range(1, 10)))
-        bortle_combo.grid(row=5, column=1, sticky="ew")
+        bortle_combo.grid(row=3, column=1, sticky="ew")
         bortle_combo.bind("<<ComboboxSelected>>", lambda _event: self._apply_bortle_preset())
 #        ttk.Label(f, text="sqm mode: your zenith SQM reading sets the V sky; band colours and the"
 #                          " Moon model are applied on top. Bortle preset fills a typical SQM.",
 #                  foreground="gray35", wraplength=300, justify="left").grid(row=8, column=0, columnspan=2, sticky="w")
+
+
+
+
+
+
         self.psf_model_var = self._var("psf_model", "gaussian")
         self.moffat_beta_var = self._var("moffat_beta", "2.5")
         self.seeing_scaling_var = self._var("seeing_wavelength_scaling", "0")
+
+        ttk.Label(f, text="PSF model:").grid(row=4, column=0, sticky="w")
+        ttk.Combobox(f, textvariable=self.psf_model_var, state="readonly",
+                     values=("gaussian", "moffat")).grid(row=4, column=1, sticky="ew")
+        self._entry(f, 5, "Moffat beta (2.5<beta<4.7):", self.moffat_beta_var)
+#        ttk.Label(f, text="ING: pos-dep sky model; fixed_ab: observed sky. Moffat real seeing wings; 2.5<= beta <=4.7",
+#                  foreground="gray35", wraplength=300, justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
+#        ttk.Label(f, text="ING: position-dependent night/twilight/day model (van Rhijn airglow,\n"
+#                          "zodiacal, starlight, Krisciunas-Schaefer Moon); fixed_ab: manual observed sky.\n"
+#                          "Moffat reproduces real seeing wings; beta 2.5-4.7 (Gaussian limit).",
+#                  foreground="gray35", wraplength=300, justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
+
+
         ttk.Checkbutton(f, text="Scale seeing with wavelength and airmass "
                                 "(entered seeing = zenith V)", variable=self.seeing_scaling_var,
                         onvalue="1", offvalue="0").grid(row=9, column=0, columnspan=2, sticky="w")
+
+
+
+
+
         self.extra_background_var = self._var("extra_background_e_s_pixel", "0")
         self._entry(f, 10, "Extra background (e-/s/pixel):", self.extra_background_var)
 #        ttk.Label(f, text="Catch-all background per pixel: detector glow, stray/scattered light, "
@@ -582,16 +635,6 @@ class ETCGUI(tk.Tk):
 #                          "finite value adds the (1+n_pix/n_sky) sky-subtraction noise.",
 #                  foreground="gray35", wraplength=300,
 #                  justify="left").grid(row=15, column=0, columnspan=2, sticky="w")
-        ttk.Label(f, text="PSF model:").grid(row=3, column=0, sticky="w")
-        ttk.Combobox(f, textvariable=self.psf_model_var, state="readonly",
-                     values=("gaussian", "moffat")).grid(row=3, column=1, sticky="ew")
-        self._entry(f, 4, "Moffat beta (2.5<beta<4.7):", self.moffat_beta_var)
-#        ttk.Label(f, text="ING: pos-dep sky model; fixed_ab: observed sky. Moffat real seeing wings; 2.5<= beta <=4.7",
-#                  foreground="gray35", wraplength=300, justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
-#        ttk.Label(f, text="ING: position-dependent night/twilight/day model (van Rhijn airglow,\n"
-#                          "zodiacal, starlight, Krisciunas-Schaefer Moon); fixed_ab: manual observed sky.\n"
-#                          "Moffat reproduces real seeing wings; beta 2.5-4.7 (Gaussian limit).",
-#                  foreground="gray35", wraplength=300, justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
 
         # The SYSTEM RESPONSE preview is built at the end of the data column
         # (below the stellar-template selector), not here.

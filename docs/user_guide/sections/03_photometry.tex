@@ -75,6 +75,53 @@ declared in the model --- uniform brightness --- is good when the object
 is much larger than the seeing disc; for objects comparable to the
 seeing (small planetary nebulae), treat the result as indicative.
 
+\subsection{Defocused photometry and the donut PSF}
+\label{sec:defocus-guide}
+
+Set \textsf{Source geometry} to \code{defocus} when you observe a bright
+star \emph{out of focus} on purpose --- the standard technique for
+high-precision time-series photometry (bright transiting exoplanets,
+$\delta$~Scuti stars), where spreading the light over many pixels beats
+scintillation, flat-field residuals and saturation all at once. Enter the
+\textbf{focus position} in \textmu m: 0 is focused, and a positive or
+negative value moves the detector behind or ahead of focus (intra- or
+extra-focal). Only the \emph{magnitude} of the defocus sets the image
+size, so $+200$ and $-200$\,\textmu m give the same donut.
+
+Press \textsf{Calculate defocused PSF}. In the geometric-optics limit a
+defocused point source is a uniformly-illuminated annulus --- a
+``donut'' --- whose outer radius on the focal plane is
+$r_{\rm out} = \delta D / (2F)$ for a defocus $\delta$, aperture diameter
+$D$ and focal length $F$. The telescope's central obstruction punches a
+hole of radius $r_{\rm in} = (\varepsilon)\,r_{\rm out}$ with
+$\varepsilon = $ (obstruction diameter)/$D$: with a non-zero obstruction
+the program models a classical Ritchey--Chr\'etien or Cassegrain (a real
+donut with a hole); set the obstruction to 0 and it models a classical
+reflector as a filled disc. The window shows two panels: the radial
+intensity cross-section (a symmetric cut from $-r$ to $+r$ through the
+donut, normalised to its peak) and the cumulative encircled energy versus
+radius. Both the figure and the underlying tables (radius in pixels,
+radius in arcsec, and either the normalised intensity or the encircled
+energy in per cent) are saved into the session directory with
+\textsf{Save figure + data}.
+
+From the encircled-energy curve you pick the aperture radius that captures
+the fraction of light you want (the whole donut, or a little less to keep
+the sky and read-noise area down), type it into the window and press
+\textsf{Use this radius for photometry}: the run then uses that radius,
+and the Outputs tab reports it together with the enclosed-energy fraction
+and the defocus value. Because the light is spread over the donut, the
+peak pixel falls by orders of magnitude relative to the focused star, so
+you can integrate far longer before saturating --- exactly the point of
+defocusing.
+
+The model is geometric optics: it neglects diffraction ringing at the
+donut edges, optical aberrations (small on-axis for a paraboloid or an RC)
+and the seeing that softens the rim. All of these are negligible when the
+donut is much larger than the seeing and diffraction scales, which is the
+regime defocused photometry is used in; for very small defocus, comparable
+to the seeing disc, treat the donut profile as indicative.
+
 \subsection{Target S/N mode and the stack planner}
 
 Typing a number into \textsf{Target S/N} reverses the question: instead

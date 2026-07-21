@@ -101,3 +101,47 @@ case; a typical unguided minute on a mid-range mount
 ($\sigma_g \sim 1''$) visibly lowers aperture and slit couplings, which
 is exactly the effect amateurs observe between guided and unguided
 frames (v10.2).
+
+\subsection{Defocused PSF: the geometric donut}
+\label{sec:defocus}
+
+Defocused photometry spreads a bright star deliberately over many pixels to
+suppress scintillation, flat-field residuals and saturation. When the
+detector is displaced by a distance $\delta$ from the focal plane, the
+geometric image of a point source is the projection of the (annular) pupil:
+a uniformly-illuminated ring, or ``donut''. For a primary of diameter $D$
+and focal length $F$ (focal ratio $N = F/D$), similar triangles give a blur
+circle of full diameter $\delta/N = \delta D/F$, i.e.\ an outer radius on the
+focal plane
+\begin{equation}
+  r_{\rm out} \;=\; \frac{\delta D}{2F},
+\end{equation}
+which depends only on $|\delta|$: intra- and extra-focal displacements of
+equal magnitude give identical images. A central obstruction of linear
+fraction $\varepsilon = D_{\rm obs}/D$ (a classical Ritchey--Chr\'etien or
+Cassegrain, $\varepsilon>0$) blocks the inner cone and leaves a hole of
+radius $r_{\rm in} = \varepsilon\,r_{\rm out}$; a classical reflector modelled
+with $\varepsilon = 0$ gives a filled disc. A uniformly illuminated pupil maps,
+in the geometric limit, to a flat annulus, so the encircled energy is analytic:
+\begin{equation}
+  \mathrm{EE}(r) \;=\;
+  \begin{cases}
+    0, & r < r_{\rm in},\\[2pt]
+    \dfrac{r^2 - r_{\rm in}^2}{r_{\rm out}^2 - r_{\rm in}^2}, & r_{\rm in} \le r \le r_{\rm out},\\[8pt]
+    1, & r > r_{\rm out}.
+  \end{cases}
+\end{equation}
+Focal-plane radii convert to angle through the plate scale
+($\SI{1}{\micro\metre} \to 206264.8\times10^{-3}/F_{\rm mm}$ arcsec) and to
+pixels through the pixel pitch. The user selects a photometry aperture radius
+$r_{\rm ap}$ from this curve; the captured light fraction is
+$\mathrm{EE}(r_{\rm ap})$, and the peak pixel holds the uniform annulus
+surface brightness $L_{\rm tot}/[\pi(r_{\rm out}^2 - r_{\rm in}^2)]$ times the
+pixel solid angle --- orders of magnitude below the focused stellar peak,
+which is the whole benefit of defocusing.
+
+This is a geometric-optics model: it omits diffraction ringing at the donut
+edges, optical aberrations (small on-axis for a paraboloid or an RC) and the
+seeing that convolves and softens the rim, all negligible once the donut is
+much larger than the seeing and diffraction scales --- the regime in which
+defocused photometry operates.

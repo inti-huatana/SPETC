@@ -17,6 +17,7 @@ from etc_physics import (as_angstrom_curve, background_noise_factor, calibrated_
                          FWHM_TO_SIGMA)
 from observing_conditions import digitization_noise_e, effective_seeing_arcsec, scintillation_variance_e2
 from spectral_utils import require_coverage, interpolate_checked, interpolate_zero_filled
+from defocus import defocus_encircled_energy, _donut_radii_um, ARCSEC_PER_RAD
 
 
 class PhotometryETC:
@@ -34,12 +35,13 @@ class PhotometryETC:
                                   reference_detector_type=1, visual_detector_type=1,
                                   observing_detector_type=1,
                                   source_geometry="point", source_area_arcsec2=None,
+                                  defocus_position_um=None,
                                   radial_velocity_kms=0.0, ebv=0.0):
         if t_exp_s <= 0:
             raise ValueError("Exposure time must be positive.")
         geometry = str(source_geometry).strip().lower()
-        if geometry not in {"point", "extended"}:
-            raise ValueError("Source geometry must be 'point' or 'extended'.")
+        if geometry not in {"point", "extended", "defocus"}:
+            raise ValueError("Source geometry must be 'point', 'extended' or 'defocus'.")
         filter_wave, filter_transmission = as_angstrom_curve(observing_filter,
                                                              "photometric observing filter")
         filter_transmission = np.clip(filter_transmission, 0.0, 1.0)
@@ -120,6 +122,25 @@ class PhotometryETC:
             source_rate = total_source_rate * captured_fraction
             surface_rate_es = total_rate_es / source_area  # e-/s/arcsec^2
             peak_source_rate_es = surface_rate_es * plate_scale**2
+        elif geometry == "defocus":
+            # Geometric defocused-PSF (donut): the star's light is spread over
+            # a uniformly-illuminated annulus set by the defocus and the
+            # central obstruction (see defocus.py).  The aperture captures the
+            # donut's encircled-energy fraction, and the peak pixel holds the
+            # (much lower) uniform annulus surface brightness.
+            focal_mm = float(self.telescope["focal_length_mm"])
+            diameter_mm = float(self.telescope["diameter_mm"])
+            obstruction_mm = float(self.telescope.get("obstruction_mm", 0.0))
+            captured_fraction = defocus_encircled_energy(
+                aperture_radius, defocus_position_um, diameter_mm, focal_mm, obstruction_mm)
+            source_rate = total_source_rate * captured_fraction
+            r_in_um, r_out_um = _donut_radii_um(defocus_position_um, diameter_mm,
+                                                focal_mm, obstruction_mm)
+            arcsec_per_um = ARCSEC_PER_RAD * 1e-3 / focal_mm
+            annulus_area_arcsec2 = np.pi * ((r_out_um * arcsec_per_um)**2
+                                            - (r_in_um * arcsec_per_um)**2)
+            surface_rate_es = total_rate_es / annulus_area_arcsec2  # e-/s/arcsec^2
+            peak_source_rate_es = surface_rate_es * plate_scale**2
         else:
             source_rate = total_source_rate * psf_encircled_energy(
                 aperture_radius, seeing, psf_model, moffat_beta)
@@ -192,6 +213,12 @@ class PhotometryETC:
             "scintillation_noise_e": float(np.sqrt(scintillation_var)),
             "digitization_noise_e": float(np.sqrt(digitization_var)),
             "source_geometry": geometry,
+            "aperture_radius_arcsec": aperture_radius,
+            "defocus_captured_fraction": (float(captured_fraction)
+                                          if geometry in {"extended", "defocus"} else 1.0),
+            "defocus_position_um": (float(defocus_position_um)
+                                    if geometry == "defocus" and defocus_position_um is not None
+                                    else None),
             "sky_mag_arcsec2": sky_mag,
             "sky_subtraction_factor": float(subtraction_factor),
             "radial_velocity_kms": float(radial_velocity_kms),

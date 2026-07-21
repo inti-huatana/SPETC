@@ -730,6 +730,24 @@ class ETCGUI(tk.Tk):
         else:
             self.grating_efficiency_status_var.set("choose a CSV with Load CSV…")
 
+    def _update_photometry_geometry_state(self):
+        """Grey the photometry fields that do not apply to the chosen geometry.
+
+        point   : aperture radius active; source area, focus position and the
+                  defocused-PSF button greyed.
+        extended: source area active; aperture radius, focus position and the
+                  button greyed.
+        defocus : focus position and the button active; aperture radius (set
+                  from the PSF window) and source area greyed.
+        """
+        if not hasattr(self, "aperture_entry"):
+            return
+        geometry = self.source_geometry_var.get().strip().lower()
+        self._set_widget_enabled(self.aperture_entry, geometry == "point")
+        self._set_widget_enabled(self.source_area_entry, geometry == "extended")
+        self._set_widget_enabled(self.defocus_entry, geometry == "defocus")
+        self._set_widget_enabled(self.defocus_button, geometry == "defocus")
+
     WL_UNIT_TO_AA = {"AA": 1.0, "nm": 10.0, "um": 10000.0}
 
     def _wl_to_aa(self, value):
@@ -819,18 +837,31 @@ class ETCGUI(tk.Tk):
 
         f = self._section(holder, "PHOTOMETRY")
         self.photometry_box = f
-        self.aperture_var = self._var("photometric_aperture_radius_arcsec", "1.0")
-        self._entry(f, 0, "Aperture radius (arcsec):", self.aperture_var)
+        # Source geometry is the first row: it decides which of the fields
+        # below apply.  'point' uses the aperture radius; 'extended' uses the
+        # source area; 'defocus' uses the intra/extra-focal position and the
+        # defocused-PSF (donut) calculator, which sets the aperture radius.
         self.source_geometry_var = self._var("source_geometry", "point")
-        self.source_area_var = self._var("source_area_arcsec2", "100.0")
-        ttk.Label(f, text="Source geometry:").grid(row=1, column=0, sticky="w")
+        ttk.Label(f, text="Source geometry:").grid(row=0, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.source_geometry_var, state="readonly",
-                     values=("point", "extended")).grid(row=1, column=1, sticky="ew")
-        self._entry(f, 2, "Extended source area (arcsec2):", self.source_area_var)
-        #ttk.Label(f, text="Point: PSF aperture losses. Extended (galaxy/nebula/planet): the magnitude\n"
-        #                  "stays the integrated magnitude spread uniformly over the stated area;\n"
-        #                  "valid when the source is much larger than the seeing disc.",
-        #          foreground="gray35", wraplength=280, justify="left").grid(row=3, column=0, columnspan=2, sticky="w")
+                     values=("point", "extended", "defocus")).grid(row=0, column=1, sticky="ew")
+        self.source_geometry_var.trace_add("write", lambda *_: self._update_photometry_geometry_state())
+        self.aperture_var = self._var("photometric_aperture_radius_arcsec", "1.0")
+        self.aperture_entry = self._labeled_entry(f, 1, "Aperture radius (arcsec):", self.aperture_var)
+        self.source_area_var = self._var("source_area_arcsec2", "100.0")
+        self.source_area_entry = self._labeled_entry(f, 2, "Extended source area (arcsec2):",
+                                                     self.source_area_var)
+        # Intra/extra-focal position (um): 0 = focused; +/- move the detector
+        # behind/ahead of focus.  The button opens the defocused-PSF window.
+        self.defocus_position_var = self._var("defocus_position_um", "0")
+        ttk.Label(f, text="Focus position (um, +/- intra/extra):").grid(row=3, column=0, sticky="w")
+        defocus_row = ttk.Frame(f)
+        defocus_row.grid(row=3, column=1, sticky="ew")
+        self.defocus_entry = ttk.Entry(defocus_row, textvariable=self.defocus_position_var, width=8)
+        self.defocus_entry.grid(row=0, column=0, sticky="w")
+        self.defocus_button = ttk.Button(defocus_row, text="Calculate defocused PSF",
+                                         command=self._calculate_defocus_psf)
+        self.defocus_button.grid(row=0, column=1, padx=(4, 0))
         self.comparison_mag_var = self._var("comparison_star_mag", "")
         self._entry(f, 4, "Comparison star mag (optional):", self.comparison_mag_var)
         self.differential_var = tk.StringVar(value="")
@@ -1965,6 +1996,9 @@ class ETCGUI(tk.Tk):
         photometry = self.mode_var.get() == "photometry"
         if hasattr(self, "photometry_box"):
             self._set_frame_enabled(self.photometry_box, photometry)
+            # Within an enabled photometry box, grey the geometry-specific fields.
+            if photometry:
+                self._update_photometry_geometry_state()
         # The spectroscopy box (and its slit/slitless sub-state) is handled here.
         self._update_spectroscopy_mode_state()
         if not photometry and self.filter_resp_data is not None:
@@ -2346,7 +2380,117 @@ class ETCGUI(tk.Tk):
     def _source_geometry_kwargs(self):
         geometry = self.source_geometry_var.get().strip().lower()
         return {"source_geometry": geometry,
-                "source_area_arcsec2": float(self.source_area_var.get()) if geometry == "extended" else None}
+                "source_area_arcsec2": float(self.source_area_var.get()) if geometry == "extended" else None,
+                "defocus_position_um": float(self.defocus_position_var.get()) if geometry == "defocus" else None}
+
+    def _calculate_defocus_psf(self):
+        """Compute and display the geometric defocused-PSF (donut) for the
+        current telescope/detector, letting the user pick the photometry
+        aperture radius from its encircled-energy curve."""
+        from defocus import defocus_donut_profile, defocus_encircled_energy
+        try:
+            defocus_um = float(self.defocus_position_var.get())
+            diameter_mm = float(self.diam_var.get())
+            focal_mm = float(self.focal_var.get())
+            obstruction_mm = float(self.obstruct_var.get())
+            pixel_um = float(self.pixel_var.get())
+        except ValueError as exc:
+            messagebox.showerror("Defocused PSF", f"Check the telescope/detector numbers: {exc}")
+            return
+        try:
+            profile = defocus_donut_profile(defocus_um, diameter_mm, focal_mm,
+                                            obstruction_mm, pixel_um)
+        except ValueError as exc:
+            messagebox.showerror("Defocused PSF", str(exc))
+            return
+
+        win = tk.Toplevel(self)
+        win.title("Defocused PSF (donut)")
+        figure = Figure(figsize=(7.5, 6.6))
+        ax_profile = figure.add_subplot(211)
+        ax_ee = figure.add_subplot(212)
+        # Symmetric radial cross-section through the donut centre (-r..+r).
+        r_arcsec = profile["radius_arcsec"]
+        intensity = profile["intensity_norm"]
+        r_sym = np.concatenate([-r_arcsec[::-1], r_arcsec])
+        i_sym = np.concatenate([intensity[::-1], intensity])
+        ax_profile.plot(r_sym, i_sym, color="#1f4f82")
+        ax_profile.set_xlabel("radius (arcsec)")
+        ax_profile.set_ylabel("intensity / peak")
+        kind = "RC / obstructed" if profile["epsilon"] > 0 else "classical reflector"
+        ax_profile.set_title(
+            f"{kind}: defocus {defocus_um:+.0f} um  ->  donut "
+            f"r_in={profile['r_in_arcsec']:.2f}\", r_out={profile['r_out_arcsec']:.2f}\" "
+            f"(eps={profile['epsilon']:.2f})")
+        ax_profile.grid(True, alpha=0.3)
+        ax_ee.plot(r_arcsec, profile["ee_percent"], color="#8b3a3a")
+        ax_ee.set_xlabel("aperture radius (arcsec)")
+        ax_ee.set_ylabel("encircled energy (%)")
+        ax_ee.grid(True, alpha=0.3)
+        figure.tight_layout()
+        canvas = FigureCanvasTkAgg(figure, master=win)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+        controls = ttk.Frame(win)
+        controls.pack(fill="x", pady=4)
+        ttk.Label(controls, text="Photometry aperture radius (arcsec):").pack(side="left", padx=(6, 2))
+        default_radius = f"{profile['r_out_arcsec']:.3f}"
+        radius_var = tk.StringVar(value=(self.aperture_var.get() or default_radius))
+        ttk.Entry(controls, textvariable=radius_var, width=10).pack(side="left")
+
+        def _use_radius():
+            try:
+                radius = float(radius_var.get())
+                if radius <= 0:
+                    raise ValueError
+            except ValueError:
+                messagebox.showerror("Defocused PSF", "Enter a positive aperture radius in arcsec.")
+                return
+            self.aperture_var.set(f"{radius:g}")
+            fraction = defocus_encircled_energy(radius, defocus_um, diameter_mm,
+                                                focal_mm, obstruction_mm)
+            self.status_var.set(f"Defocus aperture set to {radius:g}\" "
+                                f"(encircled energy {100.0 * fraction:.1f}%).")
+
+        ttk.Button(controls, text="Use this radius for photometry",
+                   command=_use_radius).pack(side="left", padx=6)
+        ttk.Button(controls, text="Save figure + data",
+                   command=lambda: self._save_defocus_outputs(figure, profile, defocus_um)
+                   ).pack(side="left", padx=6)
+
+    def _save_defocus_outputs(self, figure, profile, defocus_um):
+        """Save the donut figure (PNG) and the two data tables (profile and
+        encircled energy) into the session directory, or a chosen folder."""
+        from pathlib import Path
+        target = self._export_dir()
+        if not target:
+            target = filedialog.askdirectory(title="Save defocused-PSF outputs to…")
+            if not target:
+                return
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        base = Path(target)
+        png_path = base / f"defocus_psf_{stamp}.png"
+        profile_csv = base / f"defocus_profile_{stamp}.csv"
+        ee_csv = base / f"defocus_encircled_energy_{stamp}.csv"
+        try:
+            figure.savefig(png_path, dpi=120)
+            np.savetxt(profile_csv,
+                       np.column_stack([profile["radius_px"], profile["radius_arcsec"],
+                                        profile["intensity_norm"]]),
+                       delimiter=",", header="radius_pixel,radius_arcsec,intensity_norm",
+                       comments="")
+            np.savetxt(ee_csv,
+                       np.column_stack([profile["radius_px"], profile["radius_arcsec"],
+                                        profile["ee_percent"]]),
+                       delimiter=",", header="radius_pixel,radius_arcsec,encircled_energy_percent",
+                       comments="")
+        except OSError as exc:
+            messagebox.showerror("Defocused PSF", f"Could not save outputs:\n{exc}")
+            return
+        messagebox.showinfo("Defocused PSF",
+                            f"Saved:\n{png_path.name}\n{profile_csv.name}\n{ee_csv.name}\n\n"
+                            f"in {base}")
 
     def _sky_models_for_track(self, track, vega_profile, ra_deg, dec_deg):
         """Build observed ground-sky inputs for every planning time sample."""
@@ -2703,7 +2847,11 @@ class ETCGUI(tk.Tk):
                     f"mode / exposure   : photometry ({result['source_geometry']}) / {exposure_used:.1f} s",
                     f"S/N               : {result['snr']:.1f}",
                     f"total error       : {total_error_mmag:.2f} mmag (1085.7 / S/N, this frame)",
-                    f"aperture          : {result['n_pixels']:.0f} px",
+                    f"aperture          : {result['n_pixels']:.0f} px "
+                    f"(radius {result.get('aperture_radius_arcsec', 0.0):.3f} arcsec)"
+                    + (f", defocus {result['defocus_position_um']:+.0f} um, "
+                       f"encircled energy {100.0 * result['defocus_captured_fraction']:.1f}%"
+                       if result.get('source_geometry') == 'defocus' else ""),
                     f"scintillation     : {result['scintillation_noise_e']:.1f} e-  "
                     f"({100.0 * scint_fraction:.2f}% of source, {scint_mmag:.2f} mmag)",
                     f"ADC quantization  : {result['digitization_noise_e']:.1f} e-",

@@ -133,10 +133,25 @@ Photometry or spectroscopy; exposure time; optional \textbf{target S/N}
 saturation — the solver includes scintillation, so bright-star requests
 are honest); the \textbf{stack sub-exposure} preference (0 = automatic)
 feeding the stack planner, whose result appears in the label below after
-each run. The photometry panel adds the aperture radius, the
-\textbf{source geometry}: \code{point}, or \code{extended} with the source
-area in arcsec$^2$ for galaxies, nebulae and planets (the magnitude you
-enter stays the \emph{total} integrated magnitude), and the optional
+each run. In the photometry panel the \textbf{source geometry} is the
+first row and decides which of the fields below it apply: \code{point}
+uses the aperture radius (PSF aperture losses); \code{extended} uses the
+source area in arcsec$^2$ for galaxies, nebulae and planets (the magnitude
+you enter stays the \emph{total} integrated magnitude, spread uniformly
+over that area); and \code{defocus} models a \emph{defocused} telescope,
+where the star is deliberately spread into a donut to beat scintillation
+and flat-field errors. In \code{defocus} mode you enter the
+\textbf{focus position} in \textmu m (0 = focused; a positive or negative
+value moves the detector intra- or extra-focally) and press
+\textsf{Calculate defocused PSF}: a window shows the geometric donut
+profile and its encircled-energy curve
+(Sect.~\ref{sec:defocus-guide}), from which you pick the photometry
+aperture radius; that radius is then used in the run and reported in the
+Outputs tab. The three geometries are mutually exclusive in the UI: the
+fields that do not apply to the current choice are greyed out (aperture
+radius for \code{extended}/\code{defocus}, source area for
+\code{point}/\code{defocus}, focus position and the PSF button for
+\code{point}/\code{extended}). The panel also has the optional
 \textbf{comparison-star magnitude} for differential photometry — the
 mmag-per-frame precision appears in the label below. The spectroscopy
 panel holds the resolving power, slit width, extraction height, sampling,

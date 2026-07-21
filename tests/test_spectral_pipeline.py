@@ -726,33 +726,61 @@ def test_detector_nonlinearity_flag_and_fw_adc_rename():
 
 def test_defocus_donut_geometry_and_encircled_energy():
     """Round-6: geometric defocused-PSF (donut) radii, obstruction hole and the
-    analytic encircled-energy law, including sign symmetry and the reflector
-    (obstruction=0) filled-disc limit."""
-    from defocus import defocus_donut_profile, defocus_encircled_energy, _donut_radii_um
-    diameter, focal, obstruction, pixel = 358.0, 2000.0, 87.5, 5.0
+    analytic encircled-energy law, including sign symmetry."""
+    from defocus import defocus_encircled_energy, _donut_radii_um
+    diameter, focal, obstruction = 358.0, 2000.0, 87.5
     # Blur radius is delta * D / (2F); the hole is eps = obstruction / D.
     r_in, r_out = _donut_radii_um(100.0, diameter, focal, obstruction)
     assert abs(r_out - 100.0 * diameter / (2.0 * focal)) < 1e-9
     assert abs(r_in / r_out - obstruction / diameter) < 1e-9
-    profile = defocus_donut_profile(100.0, diameter, focal, obstruction, pixel)
-    # Encircled energy is 0 at the inner edge, 1 at the outer edge, 0.5 at the
-    # equal-area radius sqrt((eps^2+1)/2) * r_out.
-    assert defocus_encircled_energy(profile["r_in_arcsec"], 100.0, diameter, focal, obstruction) == 0.0
-    assert abs(defocus_encircled_energy(profile["r_out_arcsec"], 100.0, diameter, focal, obstruction) - 1.0) < 1e-9
-    eps = profile["epsilon"]
-    r_half = profile["r_out_arcsec"] * ((eps**2 + 1.0) / 2.0) ** 0.5
+    arcsec_per_um = 206264.806247 * 1e-3 / focal
+    r_out_arcsec, r_in_arcsec = r_out * arcsec_per_um, r_in * arcsec_per_um
+    eps = obstruction / diameter
+    # Geometric encircled energy: 0 at the inner edge, 1 at the outer edge,
+    # 0.5 at the equal-area radius sqrt((eps^2+1)/2) * r_out.
+    assert defocus_encircled_energy(r_in_arcsec, 100.0, diameter, focal, obstruction) == 0.0
+    assert abs(defocus_encircled_energy(r_out_arcsec, 100.0, diameter, focal, obstruction) - 1.0) < 1e-9
+    r_half = r_out_arcsec * ((eps**2 + 1.0) / 2.0) ** 0.5
     assert abs(defocus_encircled_energy(r_half, 100.0, diameter, focal, obstruction) - 0.5) < 1e-6
     # Intra/extra-focal sign does not change the donut size.
     assert (defocus_encircled_energy(0.5, 100.0, diameter, focal, obstruction)
             == defocus_encircled_energy(0.5, -100.0, diameter, focal, obstruction))
-    # Classical reflector (obstruction=0) -> filled disc, no hole.
-    reflector = defocus_donut_profile(100.0, diameter, focal, 0.0, pixel)
-    assert reflector["epsilon"] == 0.0
-    assert reflector["r_in_arcsec"] == 0.0
     # A zero defocus has no donut and must be rejected.
     import numpy as _np
     with _np.testing.assert_raises(ValueError):
         _donut_radii_um(0.0, diameter, focal, obstruction)
+
+
+def test_defocus_profile_is_seeing_convolved_not_a_step():
+    """Round-6 realism: the displayed profile is the geometric annulus
+    convolved with the seeing PSF, so its edges are rounded (finite slope) and
+    it has wings beyond the geometric outer radius -- not a flat-topped step.
+    A classical reflector (obstruction=0) partly fills its centre by seeing."""
+    from defocus import defocused_star_profile
+    diameter, focal, obstruction, pixel = 358.0, 2000.0, 87.5, 5.0
+    # Large donut (r_out >> seeing) so the ring survives the convolution.
+    profile = defocused_star_profile(800.0, diameter, focal, obstruction, pixel,
+                                     seeing_arcsec=2.5, psf_model="moffat", moffat_beta=2.5)
+    r = profile["radius_arcsec"]
+    intensity = profile["intensity_norm"]
+    r_out = profile["r_out_arcsec"]
+    # Wings: appreciable light past the geometric edge (a step would be ~0).
+    assert np.interp(r_out + 1.5, r, intensity) > 0.05
+    # Rounded, not vertical: the intensity does not jump from ~1 to 0 within a
+    # bin -- across +/-0.5" of the outer edge it changes by less than 0.9.
+    inside = float(np.interp(r_out - 0.5, r, intensity))
+    outside = float(np.interp(r_out + 0.5, r, intensity))
+    assert (inside - outside) < 0.9
+    # The seeing partly fills the central hole, so the centre is not exactly 0.
+    assert float(np.interp(0.0, r, intensity)) > 0.05
+    # Encircled energy is monotone and reaches ~100% well beyond the ring.
+    assert profile["ee_percent"][0] < profile["ee_percent"][-1]
+    assert profile["ee_percent"][-1] > 99.0
+    # A tiny defocus (donut << seeing) collapses to a seeing-like core, peaked
+    # at the centre rather than showing a hole.
+    small = defocused_star_profile(60.0, diameter, focal, obstruction, pixel,
+                                   seeing_arcsec=2.5, psf_model="gaussian")
+    assert float(np.interp(0.0, small["radius_arcsec"], small["intensity_norm"])) > 0.9
 
 
 def test_defocus_photometry_spreads_light_and_lowers_peak():
@@ -833,6 +861,7 @@ if __name__ == "__main__":
     test_guiding_blur_lowers_slit_throughput()
     test_rv_shift_and_reddening_transform()
     test_defocus_donut_geometry_and_encircled_energy()
+    test_defocus_profile_is_seeing_convolved_not_a_step()
     test_defocus_photometry_spreads_light_and_lowers_peak()
     print("PASS: v9 spectral pipeline safeguards + v10 physics regressions "
           "+ v10.2 audit-fix regressions (A1, A2, D1, B1-B11)")

@@ -368,11 +368,13 @@ PHOTOMETRY.
   integrated magnitude spread uniformly over a stated angular area, with
   area-fraction aperture capture and a surface-brightness peak pixel (valid
   when the source is much larger than the seeing disc); **defocus** models a
-  defocused telescope, computing the geometric donut PSF (uniform annulus of
-  outer radius `delta*D/2F` with a central hole set by the obstruction —
-  a filled disc when the obstruction is 0) and its analytic encircled-energy
-  curve, from which you pick the photometry aperture radius in a dedicated
-  window (profile and encircled-energy figures and data saved to the session).
+  defocused telescope, computing the donut PSF (geometric annulus of outer
+  radius `delta*D/2F` with a central hole set by the obstruction — a filled
+  disc when the obstruction is 0 — **convolved with the atmospheric seeing/
+  guiding PSF**, so the profile has realistic rounded rims and wings, not
+  vertical edges) and its encircled-energy curve, from which you pick the
+  photometry aperture radius in a dedicated window (profile and
+  encircled-energy figures and data saved to the session).
   Spectroscopy supports `slit` and
   `slitless` modes. Slit mode uses both slit-width and finite
   extraction-height losses; with the slit **not** at the parallactic angle it

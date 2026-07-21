@@ -1,36 +1,35 @@
 """
 defocus.py
-Geometric defocused-PSF (donut) model for defocused photometry.
+Defocused-PSF (donut) model for defocused photometry.
 
-When the detector is displaced by a distance delta from the focal plane, the
-geometric image of a point source is a uniformly-illuminated annulus (a
-"donut"): light from the whole pupil is spread over a disc whose diameter is
-set by the focal ratio, with a central hole imposed by the telescope's central
-obstruction.  This is the classical model behind defocused photometry (bright
-targets spread over many pixels to beat scintillation and flat-field errors).
+A defocused telescope images a point source as a broad "donut".  In the pure
+geometric-optics limit that donut is a uniformly-illuminated annulus (the
+projection of the pupil), but the image a camera actually records is that
+annulus **convolved with the atmospheric point-spread function** -- the
+seeing (and any guiding/tracking blur).  The convolution is what turns the
+geometric annulus, with its unphysical vertical edges, into the smoothly
+rounded, winged ring seen in real defocused frames.  This module builds the
+realistic (seeing-convolved) profile and its encircled-energy curve, and
+keeps the geometric annulus available as the ideal limit.
 
-For an aperture of diameter ``D`` and focal length ``F`` (focal ratio
-``N = F / D``), a defocus of ``delta`` gives a blur circle of full diameter
-``delta / N = delta * D / F`` on the focal plane, i.e. an outer radius
+Geometry.  For a primary of diameter ``D`` and focal length ``F`` (focal
+ratio ``N = F / D``), a defocus of ``delta`` gives a blur circle of full
+diameter ``delta / N = delta * D / F`` on the focal plane, i.e. an outer
+radius ``r_out = delta * D / (2 F)``.  A central obstruction of linear
+fraction ``eps = obstruction / D`` (a classical Ritchey-Chretien or
+Cassegrain, ``obstruction > 0``) removes the inner ``r_in = eps * r_out``; a
+classical reflector modelled with ``obstruction = 0`` gives a filled disc.
+Only ``|delta|`` matters, so intra- and extra-focal positions of equal
+magnitude give identical images.
 
-    r_out = delta * D / (2 F).
-
-A central obstruction of linear fraction ``eps = obstruction / D`` (a classical
-Ritchey-Chretien or Cassegrain, ``obstruction > 0``) removes the inner
-``r_in = eps * r_out``; a classical reflector modelled with ``obstruction = 0``
-gives a filled disc (``r_in = 0``).  The pupil is uniformly illuminated, so in
-the geometric limit the intensity is constant across the annulus and the
-encircled energy is analytic:
-
-    EE(r) = 0                                    r < r_in
-          = (r^2 - r_in^2) / (r_out^2 - r_in^2)  r_in <= r <= r_out
-          = 1                                    r > r_out.
-
-This is a geometric-optics model: it neglects diffraction ringing at the donut
-edges, optical aberrations (small on-axis for a paraboloid or an RC) and the
-seeing that softens the edges -- all negligible when the donut is much larger
-than the seeing/diffraction scale, which is the regime defocused photometry is
-used in.
+Realism and limits.  The dominant blur from the ground is the atmosphere, so
+the model convolves the annulus with the selected seeing PSF (Gaussian or
+Moffat) after adding any guiding rms in quadrature to the seeing FWHM.  It
+still neglects diffraction ringing at the edges and optical aberrations
+(spherical, coma), which are sub-dominant once the donut is much larger than
+the seeing and diffraction scales -- the regime defocused photometry uses.
+When the seeing is set to zero the profile collapses to the ideal geometric
+annulus.
 """
 
 import numpy as np
@@ -38,6 +37,8 @@ import numpy as np
 # Radians-to-arcsec, so that 1 um on the focal plane subtends
 # (1e-3 mm / F_mm) rad -> ARCSEC_PER_RAD * 1e-3 / F_mm arcsec.
 ARCSEC_PER_RAD = 206264.806247
+# FWHM = 2 sqrt(2 ln 2) sigma for a Gaussian.
+_FWHM_TO_SIGMA = 2.3548200450309493
 
 
 def _donut_radii_um(defocus_um, diameter_mm, focal_length_mm, obstruction_mm):
@@ -61,7 +62,9 @@ def _donut_radii_um(defocus_um, diameter_mm, focal_length_mm, obstruction_mm):
 
 def defocus_encircled_energy(aperture_radius_arcsec, defocus_um, diameter_mm,
                              focal_length_mm, obstruction_mm):
-    """Fraction (0..1) of donut light within a circular aperture [arcsec radius]."""
+    """Ideal *geometric* encircled-energy fraction (0..1) of a flat annulus
+    within a circular aperture [arcsec radius].  This is the seeing-free
+    limit; the realistic value comes from :func:`defocused_star_profile`."""
     r_in_um, r_out_um = _donut_radii_um(defocus_um, diameter_mm, focal_length_mm, obstruction_mm)
     arcsec_per_um = ARCSEC_PER_RAD * 1e-3 / float(focal_length_mm)
     r_ap_um = float(aperture_radius_arcsec) / arcsec_per_um
@@ -72,17 +75,44 @@ def defocus_encircled_energy(aperture_radius_arcsec, defocus_um, diameter_mm,
     return (r_ap_um**2 - r_in_um**2) / (r_out_um**2 - r_in_um**2)
 
 
-def defocus_donut_profile(defocus_um, diameter_mm, focal_length_mm, obstruction_mm,
-                          pixel_size_um, n_samples=600, margin=1.15):
-    """Radial profile and cumulative encircled energy of the geometric donut.
+def _seeing_kernel(radius_grid, fwhm_arcsec, psf_model, moffat_beta):
+    """Normalised radial seeing kernel sampled on a 2-D radius grid."""
+    model = str(psf_model).strip().lower()
+    if model == "moffat":
+        beta = float(moffat_beta)
+        if beta <= 1.0:
+            raise ValueError("Moffat beta must exceed 1.")
+        alpha = fwhm_arcsec / (2.0 * np.sqrt(2.0 ** (1.0 / beta) - 1.0))
+        kernel = (1.0 + (radius_grid / alpha) ** 2) ** (-beta)
+    elif model == "gaussian":
+        sigma = fwhm_arcsec / _FWHM_TO_SIGMA
+        kernel = np.exp(-0.5 * (radius_grid / sigma) ** 2)
+    else:
+        raise ValueError("PSF model must be 'gaussian' or 'moffat'.")
+    total = kernel.sum()
+    if total <= 0:
+        raise ValueError("Degenerate seeing kernel.")
+    return kernel / total
 
-    Returns a dict with, over a radius grid from 0 to ``margin * r_out``:
-      ``radius_px``, ``radius_arcsec`` : the radius axis in the two units;
-      ``intensity_norm``              : intensity normalised to the peak (1 in
-                                        the annulus, 0 in the hole and outside);
-      ``ee_percent``                  : cumulative encircled energy [%];
-    plus the scalar donut geometry (``r_in_*``/``r_out_*`` in um, arcsec and px)
-    and the obstruction fraction ``epsilon``.
+
+def defocused_star_profile(defocus_um, diameter_mm, focal_length_mm, obstruction_mm,
+                           pixel_size_um, seeing_arcsec, psf_model="gaussian",
+                           moffat_beta=2.5, guiding_rms_arcsec=0.0, n_grid=384):
+    """Realistic (seeing-convolved) defocused-star radial profile and its
+    cumulative encircled energy.
+
+    The geometric annulus is built on a 2-D grid and convolved with the
+    selected atmospheric PSF (guiding rms added in quadrature to the seeing
+    FWHM), then azimuthally averaged.  Returns a dict over a radius grid from
+    0 to the field edge:
+      ``radius_arcsec`` / ``radius_px`` : the radius axis in the two units;
+      ``intensity_norm``               : azimuthal-mean intensity / its peak
+                                         (rounded edges and wings, not a step);
+      ``ee_percent``                   : cumulative encircled energy [%];
+    plus the geometric annulus radii (``r_in_*``/``r_out_*``), the obstruction
+    fraction ``epsilon``, the effective blur ``fwhm_arcsec`` used, and
+    ``peak_sb_per_arcsec2`` -- the central surface brightness of the profile
+    normalised to unit total flux, for the detector peak-pixel prediction.
     """
     r_in_um, r_out_um = _donut_radii_um(defocus_um, diameter_mm, focal_length_mm, obstruction_mm)
     focal = float(focal_length_mm)
@@ -90,25 +120,79 @@ def defocus_donut_profile(defocus_um, diameter_mm, focal_length_mm, obstruction_
     if pixel <= 0:
         raise ValueError("Pixel size must be positive.")
     arcsec_per_um = ARCSEC_PER_RAD * 1e-3 / focal
+    r_in = r_in_um * arcsec_per_um
+    r_out = r_out_um * arcsec_per_um
 
-    r_max_um = margin * r_out_um
-    radius_um = np.linspace(0.0, r_max_um, int(n_samples))
-    intensity = np.where((radius_um >= r_in_um) & (radius_um <= r_out_um), 1.0, 0.0)
-    span = r_out_um**2 - r_in_um**2
-    ee = np.clip((radius_um**2 - r_in_um**2) / span, 0.0, 1.0)
-    ee[radius_um < r_in_um] = 0.0
+    seeing = max(float(seeing_arcsec), 0.0)
+    guiding = max(float(guiding_rms_arcsec), 0.0)
+    fwhm = float(np.hypot(seeing, _FWHM_TO_SIGMA * guiding)) if (seeing > 0 or guiding > 0) else 0.0
+
+    # Field: the whole donut plus several seeing widths of wings.
+    pad = 4.0 * fwhm if fwhm > 0 else 0.06 * r_out
+    half = 1.05 * r_out + pad
+    n_grid = int(max(96, min(n_grid, 512)))
+    axis = np.linspace(-half, half, n_grid)
+    cell = axis[1] - axis[0]
+    xx, yy = np.meshgrid(axis, axis)
+    radius2d = np.hypot(xx, yy)
+    annulus = ((radius2d >= r_in) & (radius2d <= r_out)).astype(float)
+
+    if fwhm > 0:
+        from scipy.signal import fftconvolve
+        kernel = _seeing_kernel(radius2d, fwhm, psf_model, moffat_beta)
+        image = fftconvolve(annulus, kernel, mode="same")
+        image = np.clip(image, 0.0, None)
+    else:
+        image = annulus
+
+    # Azimuthal average and cumulative encircled energy in one radial binning.
+    n_bins = n_grid // 2
+    r_flat = radius2d.ravel()
+    i_flat = image.ravel()
+    bin_edges = np.linspace(0.0, half, n_bins + 1)
+    counts, _ = np.histogram(r_flat, bins=bin_edges)
+    flux_sum, _ = np.histogram(r_flat, bins=bin_edges, weights=i_flat)
+    centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean_intensity = np.where(counts > 0, flux_sum / np.maximum(counts, 1), 0.0)
+    peak = mean_intensity.max()
+    intensity_norm = mean_intensity / peak if peak > 0 else mean_intensity
+    total_flux = image.sum()
+    ee = np.cumsum(flux_sum) / total_flux if total_flux > 0 else np.zeros_like(centers)
+
+    plate_scale_arcsec_px = arcsec_per_um * pixel
+    peak_sb = float(image.max() / (total_flux * cell**2)) if total_flux > 0 else 0.0
 
     return {
-        "radius_um": radius_um,
-        "radius_px": radius_um / pixel,
-        "radius_arcsec": radius_um * arcsec_per_um,
-        "intensity_norm": intensity,
-        "ee_percent": 100.0 * ee,
-        "epsilon": (r_in_um / r_out_um) if r_out_um > 0 else 0.0,
-        "r_in_um": r_in_um,
-        "r_out_um": r_out_um,
-        "r_in_px": r_in_um / pixel,
-        "r_out_px": r_out_um / pixel,
-        "r_in_arcsec": r_in_um * arcsec_per_um,
-        "r_out_arcsec": r_out_um * arcsec_per_um,
+        "radius_arcsec": centers,
+        "radius_px": centers / plate_scale_arcsec_px,
+        "intensity_norm": intensity_norm,
+        "ee_percent": 100.0 * np.clip(ee, 0.0, 1.0),
+        "ee_fraction": np.clip(ee, 0.0, 1.0),
+        "epsilon": (r_in / r_out) if r_out > 0 else 0.0,
+        "r_in_arcsec": r_in,
+        "r_out_arcsec": r_out,
+        "r_in_px": r_in / plate_scale_arcsec_px,
+        "r_out_px": r_out / plate_scale_arcsec_px,
+        "fwhm_arcsec": fwhm,
+        "peak_sb_per_arcsec2": peak_sb,
     }
+
+
+def defocus_capture_and_peak(aperture_radius_arcsec, defocus_um, diameter_mm,
+                             focal_length_mm, obstruction_mm, pixel_size_um,
+                             seeing_arcsec, psf_model="gaussian", moffat_beta=2.5,
+                             guiding_rms_arcsec=0.0, profile=None):
+    """Realistic captured-light fraction within an aperture and the peak
+    surface brightness (per arcsec^2, unit total flux), for the engine.
+
+    Pass a pre-computed ``profile`` to avoid recomputation, else one is built.
+    """
+    if profile is None:
+        profile = defocused_star_profile(defocus_um, diameter_mm, focal_length_mm,
+                                         obstruction_mm, pixel_size_um, seeing_arcsec,
+                                         psf_model, moffat_beta, guiding_rms_arcsec)
+    captured = float(np.interp(float(aperture_radius_arcsec),
+                               profile["radius_arcsec"], profile["ee_fraction"],
+                               left=0.0, right=1.0))
+    return captured, profile["peak_sb_per_arcsec2"]

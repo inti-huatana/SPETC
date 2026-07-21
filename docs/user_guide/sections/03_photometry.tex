@@ -88,22 +88,28 @@ negative value moves the detector behind or ahead of focus (intra- or
 extra-focal). Only the \emph{magnitude} of the defocus sets the image
 size, so $+200$ and $-200$\,\textmu m give the same donut.
 
-Press \textsf{Calculate defocused PSF}. In the geometric-optics limit a
-defocused point source is a uniformly-illuminated annulus --- a
-``donut'' --- whose outer radius on the focal plane is
+Press \textsf{Calculate defocused PSF}. The geometric image of the star is
+an annulus --- a ``donut'' --- whose outer radius on the focal plane is
 $r_{\rm out} = \delta D / (2F)$ for a defocus $\delta$, aperture diameter
-$D$ and focal length $F$. The telescope's central obstruction punches a
-hole of radius $r_{\rm in} = (\varepsilon)\,r_{\rm out}$ with
-$\varepsilon = $ (obstruction diameter)/$D$: with a non-zero obstruction
-the program models a classical Ritchey--Chr\'etien or Cassegrain (a real
-donut with a hole); set the obstruction to 0 and it models a classical
-reflector as a filled disc. The window shows two panels: the radial
-intensity cross-section (a symmetric cut from $-r$ to $+r$ through the
-donut, normalised to its peak) and the cumulative encircled energy versus
-radius. Both the figure and the underlying tables (radius in pixels,
-radius in arcsec, and either the normalised intensity or the encircled
-energy in per cent) are saved into the session directory with
-\textsf{Save figure + data}.
+$D$ and focal length $F$; the central obstruction punches a hole of radius
+$r_{\rm in} = \varepsilon\,r_{\rm out}$ with
+$\varepsilon = $ (obstruction diameter)/$D$ (a classical
+Ritchey--Chr\'etien or Cassegrain when the obstruction is non-zero, a
+filled disc when it is 0). Crucially, the program does \emph{not} stop at
+that idealised flat annulus with vertical edges --- which no camera ever
+records --- but \textbf{convolves it with the atmospheric PSF} you
+selected (the seeing FWHM and Gaussian/Moffat model from the conditions
+box, plus any guiding rms). The displayed profile therefore has the
+rounded rims, partly-filled centre and wings of a real defocused star, and
+a small defocus (a donut comparable to or smaller than the seeing)
+correctly reduces to a merely broadened stellar core rather than a ring.
+The window shows two panels: the radial intensity cross-section (a
+symmetric cut from $-r$ to $+r$, normalised to its peak, with the ideal
+geometric edges marked as dotted lines for reference) and the cumulative
+encircled energy versus radius. Both the figure and the underlying tables
+(radius in pixels, radius in arcsec, and either the normalised intensity
+or the encircled energy in per cent) are saved into the session directory
+with \textsf{Save figure + data}.
 
 From the encircled-energy curve you pick the aperture radius that captures
 the fraction of light you want (the whole donut, or a little less to keep
@@ -115,12 +121,12 @@ peak pixel falls by orders of magnitude relative to the focused star, so
 you can integrate far longer before saturating --- exactly the point of
 defocusing.
 
-The model is geometric optics: it neglects diffraction ringing at the
-donut edges, optical aberrations (small on-axis for a paraboloid or an RC)
-and the seeing that softens the rim. All of these are negligible when the
-donut is much larger than the seeing and diffraction scales, which is the
-regime defocused photometry is used in; for very small defocus, comparable
-to the seeing disc, treat the donut profile as indicative.
+The model already includes the dominant blur --- the seeing (and guiding)
+convolution above. What it still neglects is diffraction ringing at the
+donut edges and optical aberrations (spherical, coma; small on-axis for a
+paraboloid or an RC); both are sub-dominant once the donut is much larger
+than the seeing and diffraction scales, which is the regime defocused
+photometry is used in.
 
 \subsection{Target S/N mode and the stack planner}
 

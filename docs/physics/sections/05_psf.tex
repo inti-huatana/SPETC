@@ -121,27 +121,45 @@ equal magnitude give identical images. A central obstruction of linear
 fraction $\varepsilon = D_{\rm obs}/D$ (a classical Ritchey--Chr\'etien or
 Cassegrain, $\varepsilon>0$) blocks the inner cone and leaves a hole of
 radius $r_{\rm in} = \varepsilon\,r_{\rm out}$; a classical reflector modelled
-with $\varepsilon = 0$ gives a filled disc. A uniformly illuminated pupil maps,
-in the geometric limit, to a flat annulus, so the encircled energy is analytic:
+with $\varepsilon = 0$ gives a filled disc. In the pure geometric limit a
+uniformly illuminated pupil maps to a \emph{flat} annulus, whose encircled
+energy would be the analytic
 \begin{equation}
-  \mathrm{EE}(r) \;=\;
+  \mathrm{EE}_{\rm geo}(r) \;=\;
   \begin{cases}
     0, & r < r_{\rm in},\\[2pt]
     \dfrac{r^2 - r_{\rm in}^2}{r_{\rm out}^2 - r_{\rm in}^2}, & r_{\rm in} \le r \le r_{\rm out},\\[8pt]
     1, & r > r_{\rm out}.
   \end{cases}
 \end{equation}
+That flat annulus, with its unphysical vertical edges, is only the
+\emph{ideal} limit --- it is not what a camera records. The image the
+detector actually sees is the geometric annulus \textbf{convolved with the
+atmospheric point-spread function},
+\begin{equation}
+  I(\mathbf{r}) \;=\; A(\mathbf{r}) \,\ast\, \mathrm{PSF}_{\rm seeing}(\mathbf{r}),
+\end{equation}
+where $A$ is the annulus indicator and $\mathrm{PSF}_{\rm seeing}$ is the
+selected Gaussian or Moffat profile with any guiding rms added in quadrature
+to its FWHM. The program builds $A$ on a two-dimensional grid, convolves it
+with the seeing kernel by FFT, and azimuthally averages the result; the
+encircled energy $\mathrm{EE}(r)$ then follows by cumulative radial
+integration of $I$. The convolution rounds the rims over roughly one seeing
+width, partly fills the central hole and adds the wings a real defocused
+star shows --- so a small defocus (donut comparable to or below the seeing)
+correctly collapses to a merely broadened stellar core, while a large
+defocus keeps a clear ring.
+
 Focal-plane radii convert to angle through the plate scale
 ($\SI{1}{\micro\metre} \to 206264.8\times10^{-3}/F_{\rm mm}$ arcsec) and to
 pixels through the pixel pitch. The user selects a photometry aperture radius
-$r_{\rm ap}$ from this curve; the captured light fraction is
-$\mathrm{EE}(r_{\rm ap})$, and the peak pixel holds the uniform annulus
-surface brightness $L_{\rm tot}/[\pi(r_{\rm out}^2 - r_{\rm in}^2)]$ times the
-pixel solid angle --- orders of magnitude below the focused stellar peak,
-which is the whole benefit of defocusing.
+$r_{\rm ap}$ from the encircled-energy curve; the captured light fraction is
+$\mathrm{EE}(r_{\rm ap})$, and the peak pixel holds the central convolved
+surface brightness (normalised to unit total flux) times the pixel solid
+angle --- orders of magnitude below the focused stellar peak, which is the
+whole benefit of defocusing.
 
-This is a geometric-optics model: it omits diffraction ringing at the donut
-edges, optical aberrations (small on-axis for a paraboloid or an RC) and the
-seeing that convolves and softens the rim, all negligible once the donut is
-much larger than the seeing and diffraction scales --- the regime in which
-defocused photometry operates.
+The remaining approximations are diffraction ringing at the edges and
+optical aberrations (spherical, coma; small on-axis for a paraboloid or an
+RC), both sub-dominant once the donut is much larger than the seeing and
+diffraction scales --- the regime in which defocused photometry operates.

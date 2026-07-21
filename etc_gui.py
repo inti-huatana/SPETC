@@ -2384,28 +2384,34 @@ class ETCGUI(tk.Tk):
                 "defocus_position_um": float(self.defocus_position_var.get()) if geometry == "defocus" else None}
 
     def _calculate_defocus_psf(self):
-        """Compute and display the geometric defocused-PSF (donut) for the
-        current telescope/detector, letting the user pick the photometry
-        aperture radius from its encircled-energy curve."""
-        from defocus import defocus_donut_profile, defocus_encircled_energy
+        """Compute and display the realistic (seeing-convolved) defocused-PSF
+        for the current telescope/detector/atmosphere, letting the user pick
+        the photometry aperture radius from its encircled-energy curve."""
+        from defocus import defocused_star_profile
         try:
             defocus_um = float(self.defocus_position_var.get())
             diameter_mm = float(self.diam_var.get())
             focal_mm = float(self.focal_var.get())
             obstruction_mm = float(self.obstruct_var.get())
             pixel_um = float(self.pixel_var.get())
+            seeing_arcsec = float(self.seeing_var.get())
+            moffat_beta = float(self.moffat_beta_var.get())
+            guiding_rms = float(self.guiding_rms_var.get() or 0.0)
         except ValueError as exc:
-            messagebox.showerror("Defocused PSF", f"Check the telescope/detector numbers: {exc}")
+            messagebox.showerror("Defocused PSF", f"Check the telescope/detector/seeing numbers: {exc}")
             return
+        psf_model = self.psf_model_var.get()
         try:
-            profile = defocus_donut_profile(defocus_um, diameter_mm, focal_mm,
-                                            obstruction_mm, pixel_um)
+            profile = defocused_star_profile(defocus_um, diameter_mm, focal_mm,
+                                             obstruction_mm, pixel_um, seeing_arcsec,
+                                             psf_model=psf_model, moffat_beta=moffat_beta,
+                                             guiding_rms_arcsec=guiding_rms)
         except ValueError as exc:
             messagebox.showerror("Defocused PSF", str(exc))
             return
 
         win = tk.Toplevel(self)
-        win.title("Defocused PSF (donut)")
+        win.title("Defocused PSF (seeing-convolved donut)")
         figure = Figure(figsize=(7.5, 6.6))
         ax_profile = figure.add_subplot(211)
         ax_ee = figure.add_subplot(212)
@@ -2415,13 +2421,17 @@ class ETCGUI(tk.Tk):
         r_sym = np.concatenate([-r_arcsec[::-1], r_arcsec])
         i_sym = np.concatenate([intensity[::-1], intensity])
         ax_profile.plot(r_sym, i_sym, color="#1f4f82")
+        # Mark the ideal geometric annulus edges for reference.
+        for edge in (profile["r_in_arcsec"], profile["r_out_arcsec"]):
+            for sign in (-1.0, 1.0):
+                ax_profile.axvline(sign * edge, color="gray", ls=":", lw=0.8, alpha=0.7)
         ax_profile.set_xlabel("radius (arcsec)")
         ax_profile.set_ylabel("intensity / peak")
         kind = "RC / obstructed" if profile["epsilon"] > 0 else "classical reflector"
         ax_profile.set_title(
-            f"{kind}: defocus {defocus_um:+.0f} um  ->  donut "
-            f"r_in={profile['r_in_arcsec']:.2f}\", r_out={profile['r_out_arcsec']:.2f}\" "
-            f"(eps={profile['epsilon']:.2f})")
+            f"{kind}: defocus {defocus_um:+.0f} um, {psf_model} seeing "
+            f"{profile['fwhm_arcsec']:.2f}\"  ->  donut "
+            f"r_in={profile['r_in_arcsec']:.2f}\", r_out={profile['r_out_arcsec']:.2f}\"")
         ax_profile.grid(True, alpha=0.3)
         ax_ee.plot(r_arcsec, profile["ee_percent"], color="#8b3a3a")
         ax_ee.set_xlabel("aperture radius (arcsec)")
@@ -2448,8 +2458,8 @@ class ETCGUI(tk.Tk):
                 messagebox.showerror("Defocused PSF", "Enter a positive aperture radius in arcsec.")
                 return
             self.aperture_var.set(f"{radius:g}")
-            fraction = defocus_encircled_energy(radius, defocus_um, diameter_mm,
-                                                focal_mm, obstruction_mm)
+            fraction = float(np.interp(radius, profile["radius_arcsec"],
+                                       profile["ee_fraction"], left=0.0, right=1.0))
             self.status_var.set(f"Defocus aperture set to {radius:g}\" "
                                 f"(encircled energy {100.0 * fraction:.1f}%).")
 

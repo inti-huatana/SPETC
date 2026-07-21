@@ -17,7 +17,7 @@ from etc_physics import (as_angstrom_curve, background_noise_factor, calibrated_
                          FWHM_TO_SIGMA)
 from observing_conditions import digitization_noise_e, effective_seeing_arcsec, scintillation_variance_e2
 from spectral_utils import require_coverage, interpolate_checked, interpolate_zero_filled
-from defocus import defocus_encircled_energy, _donut_radii_um, ARCSEC_PER_RAD
+from defocus import defocus_capture_and_peak
 
 
 class PhotometryETC:
@@ -123,24 +123,21 @@ class PhotometryETC:
             surface_rate_es = total_rate_es / source_area  # e-/s/arcsec^2
             peak_source_rate_es = surface_rate_es * plate_scale**2
         elif geometry == "defocus":
-            # Geometric defocused-PSF (donut): the star's light is spread over
-            # a uniformly-illuminated annulus set by the defocus and the
-            # central obstruction (see defocus.py).  The aperture captures the
-            # donut's encircled-energy fraction, and the peak pixel holds the
-            # (much lower) uniform annulus surface brightness.
+            # Defocused-PSF (donut): the star's light is spread over the
+            # geometric annulus set by the defocus and central obstruction,
+            # then convolved with the atmospheric PSF (seeing already includes
+            # guiding and any wavelength scaling here).  The aperture captures
+            # the realistic encircled-energy fraction, and the peak pixel holds
+            # the (much lower) convolved central surface brightness.
             focal_mm = float(self.telescope["focal_length_mm"])
             diameter_mm = float(self.telescope["diameter_mm"])
             obstruction_mm = float(self.telescope.get("obstruction_mm", 0.0))
-            captured_fraction = defocus_encircled_energy(
-                aperture_radius, defocus_position_um, diameter_mm, focal_mm, obstruction_mm)
+            captured_fraction, peak_sb_per_arcsec2 = defocus_capture_and_peak(
+                aperture_radius, defocus_position_um, diameter_mm, focal_mm,
+                obstruction_mm, self.detector.pixel_size_um, seeing,
+                psf_model=psf_model, moffat_beta=moffat_beta, guiding_rms_arcsec=0.0)
             source_rate = total_source_rate * captured_fraction
-            r_in_um, r_out_um = _donut_radii_um(defocus_position_um, diameter_mm,
-                                                focal_mm, obstruction_mm)
-            arcsec_per_um = ARCSEC_PER_RAD * 1e-3 / focal_mm
-            annulus_area_arcsec2 = np.pi * ((r_out_um * arcsec_per_um)**2
-                                            - (r_in_um * arcsec_per_um)**2)
-            surface_rate_es = total_rate_es / annulus_area_arcsec2  # e-/s/arcsec^2
-            peak_source_rate_es = surface_rate_es * plate_scale**2
+            peak_source_rate_es = total_rate_es * peak_sb_per_arcsec2 * plate_scale**2
         else:
             source_rate = total_source_rate * psf_encircled_energy(
                 aperture_radius, seeing, psf_model, moffat_beta)

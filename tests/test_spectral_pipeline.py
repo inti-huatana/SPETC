@@ -706,6 +706,24 @@ def test_rv_shift_and_reddening_transform():
     assert blue < red < 1.0
 
 
+def test_detector_nonlinearity_flag_and_fw_adc_rename():
+    """Round-5: NON_LIN between the non-linearity ceiling and hard saturation;
+    the old meaningless 'BOTH' is renamed 'FW+ADC'; default limit flags nothing."""
+    det = Detector(13.5, 1.0, 1e9, 16, 5.0, 0.0, nonlinearity_limit_adu=50000)
+    assert det.saturation_flag(40000.0) == "NONE"
+    assert det.saturation_flag(55000.0) == "NON_LIN"
+    assert det.saturation_flag(66000.0) == "ADC"
+    default = Detector(13.5, 1.0, 1e9, 16)
+    assert default.nonlinearity_limit_adu == 2 ** 16
+    assert default.saturation_flag(60000.0) == "NONE"      # nothing flagged by default
+    both = Detector(13.5, 2.5, 1000.0, 16)
+    assert both.saturation_flag(1e9) == "FW+ADC"           # renamed from BOTH
+    import numpy as _np
+    for value in (0.0, 50000.0):
+        with _np.testing.assert_raises(ValueError):
+            Detector(13.5, 1.0, 1e9, 16, nonlinearity_limit_adu=value + 2 ** 16 + 1)
+
+
 if __name__ == "__main__":
     test_explicit_nm_qe_conversion()
     test_svo_energy_and_photon_semantics_differ_for_coloured_sed()
@@ -741,6 +759,7 @@ if __name__ == "__main__":
     test_scintillation_and_digitization_orders_of_magnitude()
     test_star_analyser_dispersion()
     test_extended_source_photometry_uniform_disc()
+    test_detector_nonlinearity_flag_and_fw_adc_rename()
     test_line_flux_is_resolution_invariant()
     test_slitless_sky_scales_with_full_bandpass()
     test_daylight_sky_is_physically_bright()

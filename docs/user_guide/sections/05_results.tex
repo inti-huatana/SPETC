@@ -20,8 +20,10 @@ Three tabs:
         \textbf{sky surface brightness} actually used, band-effective
         extinction and its per-airmass coefficient, the
         absorption-adjusted apparent magnitude, saturation flag, peak
-        electrons and maximum unsaturated exposure. This table is the CSV
-        export.
+        electrons and maximum unsaturated exposure, plus --- for both
+        photometry and spectroscopy --- the \textbf{total photometric
+        error} and the \textbf{scintillation error}, each in milli-mag, at
+        every time. This table is the CSV export.
   \item \textbf{Assumptions}: a plain-language statement of every physical
         assumption of the current run --- sky model and its components
         (including the SQM value in \code{sqm} mode), PSF model, the CMOS
@@ -30,8 +32,13 @@ Three tabs:
         altitude, airmass, parallactic angle, the \textbf{pixel scale in
         arcsec/pixel}, and sky brightness.
   \item \textbf{Outputs}: the selected-time results, in a tab of their own:
-        S/N, scintillation noise in electrons and as a percentage of the
-        source, ADC noise, peak-pixel and saturation numbers, predicted
+        S/N, scintillation noise in electrons, as a percentage of the
+        source and \textbf{in milli-mag}, the \textbf{total photometric
+        error in milli-mag} ($1085.7 / (\text{S/N})$), the \textbf{Airy
+        disk size} (diameter $2.44\,\lambda/D$) in arcsec and in pixels,
+        ADC noise, peak-pixel and saturation numbers, a
+        \textbf{frame-count summary} (how many of the sampled frames are
+        linear, non-linear or saturated), predicted
         magnitudes, the unreddened $(B-V)_0$ and reddened $(B-V)$ colours,
         the $\sigma$(EW) line criterion, the stack plan and the
         differential-photometry precision. For spectroscopy it also lists

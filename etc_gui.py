@@ -32,7 +32,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib_plots import show_photometry_plot, show_spectroscopy_plot
 from sky_background import sky_magnitude_vega, SKY_WAVELENGTH_AA, SKY_MAG_VEGA
-from observing_conditions import scintillation_variance_rate_e2_s, effective_seeing_arcsec
+from observing_conditions import (scintillation_variance_rate_e2_s, effective_seeing_arcsec,
+                                  scintillation_fractional_rms)
 from sky_brightness import sky_brightness_total, BAND_WAVELENGTH_NM, BAND_VEGA_ZEROPOINT_JY
 from etc_physics import synthetic_magnitude, magnitude_f_lambda, transformed_template
 
@@ -51,6 +52,7 @@ class ETCGUI(tk.Tk):
         self.minsize(1200, 720)
         self._saved = self._load_config()
         self._program_start_utc = datetime.now(timezone.utc)
+        self.session_dir = None
         self._vars = {}
         self.active_profile_path = self._saved.get("active_instrument_profile", "")
         self._site_records = self._load_site_records()
@@ -97,15 +99,66 @@ class ETCGUI(tk.Tk):
         self._vars[key] = var
         return var
 
-    def _save_config(self):
+    def _config_dict(self):
         data = {key: var.get() for key, var in self._vars.items()}
         data["schema_version"] = 9
         data["active_instrument_profile"] = str(self.active_profile_path)
+        return data
+
+    def _save_config(self):
+        data = self._config_dict()
         try:
             with CONFIG_FILE.open("w", encoding="utf-8") as stream:
                 json.dump(data, stream, indent=2, sort_keys=True)
         except OSError as exc:
             self.status_var.set(f"Configuration not saved: {exc}")
+        # Mirror the configuration into the active session directory.
+        if self.session_dir is not None:
+            try:
+                with (self.session_dir / "config.json").open("w", encoding="utf-8") as stream:
+                    json.dump(data, stream, indent=2, sort_keys=True)
+            except OSError:
+                pass
+
+    def _create_session(self):
+        """Create output/<session name>/ and record all outputs there from now on."""
+        name = self.session_name_var.get().strip()
+        if not name:
+            messagebox.showerror("Session", "Enter a session name first.")
+            return
+        # Keep the name filesystem-safe.
+        safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in name)
+        session_dir = Path(__file__).with_name("output") / safe
+        try:
+            session_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            messagebox.showerror("Session", f"Could not create the session directory:\n{exc}")
+            return
+        self.session_dir = session_dir
+        self.session_name_var.set(safe)
+        self._save_config()
+        self.session_status_var.set(f"Recording to output/{safe}/ — config, results and plots are saved here.")
+        self.status_var.set(f"Session created: output/{safe}/")
+        messagebox.showinfo(
+            "Session created",
+            f"From now on all outputs are recorded in:\n\noutput/{safe}/\n\n"
+            "Each run writes the configuration, the selected-time result, the time series, "
+            "and the plots (PNG) into this directory.")
+
+    def _save_session_outputs(self):
+        """Write the current run's config, tables and plots into the session dir."""
+        if self.session_dir is None:
+            return
+        stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+        try:
+            if self.result_df is not None:
+                self.result_df.to_csv(self.session_dir / f"result_{stamp}.csv", index=False)
+            if self.time_series_df is not None:
+                self.time_series_df.to_csv(self.session_dir / f"time_series_{stamp}.csv", index=False)
+            if self.plot_window is not None and self.plot_window.winfo_exists():
+                self.plot_window.figure.savefig(self.session_dir / f"plots_{stamp}.png", dpi=120)
+        except (OSError, ValueError) as exc:
+            self.status_var.set(f"Session outputs partly saved: {exc}")
 
     def _build_ui(self):
         """Five operational columns; numerical results live in a Toplevel."""
@@ -136,7 +189,9 @@ class ETCGUI(tk.Tk):
         # Apply the initial photometry/spectroscopy and slit/slitless greying
         # now that every widget and status var exists.
         self._on_calculation_mode_changed()
-    
+        self._update_throughput_exclusive()
+        self._update_detector_tech_state()
+
     def _update_status_colour(self):
         text = self.status_var.get().strip().lower()
     
@@ -176,6 +231,19 @@ class ETCGUI(tk.Tk):
         ttk.Entry(frame, textvariable=variable, width=20).grid(row=row, column=1, sticky="ew", pady=1)
 
     def _build_observation_column(self, holder):
+        # ------------------------------ SESSION ----------------------------
+        # A session names an output/<session> directory into which every
+        # config, result table, and plot PNG of subsequent runs is written.
+        f = self._section(holder, "SESSION")
+        default_session = "spetc_" + self._program_start_utc.strftime("%Y%m%dT%H%M")
+        self.session_name_var = tk.StringVar(value=default_session)
+        ttk.Entry(f, textvariable=self.session_name_var).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 2))
+        ttk.Button(f, text="Create new session", command=self._create_session).grid(
+            row=1, column=0, columnspan=2, sticky="ew")
+        self.session_status_var = tk.StringVar(value="No session yet — outputs are not being recorded.")
+        ttk.Label(f, textvariable=self.session_status_var, foreground="#1f4f82", wraplength=320,
+                  justify="left").grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
+
         f = self._section(holder, "OBSERVATION DATE")
 
         self.date_var = self._var("date", "")
@@ -350,18 +418,25 @@ class ETCGUI(tk.Tk):
         self.throughput_unit_var = self._var("throughput_wavelength_unit", "Angstrom")
         for row, label, var in [(0, "Primary diameter (mm):", self.diam_var),
                                 (1, "Obstruction diameter (mm):", self.obstruct_var),
-                                (2, "Optics throughput, no QE:", self.eff_var),
-                                (3, "Focal length (mm):", self.focal_var)]:
+                                (2, "Focal length (mm):", self.focal_var)]:
             self._entry(f, row, label, var)
+        # Optics throughput moved one row down (now below the focal length).
+        ttk.Label(f, text="Optics throughput, no QE:").grid(row=3, column=0, sticky="w")
+        self.throughput_scalar_entry = ttk.Entry(f, textvariable=self.eff_var, width=20)
+        self.throughput_scalar_entry.grid(row=3, column=1, sticky="ew", pady=1)
+        # Calibrated optics response: only a Browse button plus the wavelength
+        # unit selector (no path field, no unit label).  A loaded response
+        # curve and the scalar throughput are mutually exclusive.
         ttk.Label(f, text="Calibrated optics response:").grid(row=4, column=0, sticky="w")
         curve_row = ttk.Frame(f); curve_row.grid(row=4, column=1, sticky="ew")
-        curve_row.columnconfigure(0, weight=1)
-        ttk.Entry(curve_row, textvariable=self.throughput_path_var, width=14).grid(row=0, column=0, sticky="ew")
-        ttk.Button(curve_row, text="Browse…", command=self._choose_throughput_curve).grid(row=0, column=1, padx=(3, 0))
-        
-        ttk.Label(f, text="Response wavelength unit:").grid(row=5, column=0, sticky="w")
-        ttk.Combobox(f, textvariable=self.throughput_unit_var, state="readonly",
-                     values=("Angstrom", "nm", "um"), width=10).grid(row=5, column=1, sticky="ew")
+        self.throughput_browse_button = ttk.Button(curve_row, text="Browse…", command=self._choose_throughput_curve)
+        self.throughput_browse_button.grid(row=0, column=0, sticky="w")
+        ttk.Combobox(curve_row, textvariable=self.throughput_unit_var, state="readonly",
+                     values=("Angstrom", "nm", "um"), width=8).grid(row=0, column=1, padx=(4, 0))
+        ttk.Button(curve_row, text="Clear", command=self._clear_throughput_curve).grid(row=0, column=2, padx=(4, 0))
+        self.throughput_curve_status = tk.StringVar(value="response curve: none (using scalar)")
+        ttk.Label(f, textvariable=self.throughput_curve_status, foreground="#1f4f82",
+                  wraplength=300).grid(row=5, column=0, columnspan=2, sticky="w")
 
         # ----------------------------- DETECTOR ----------------------------
         f = self._section(holder, "DETECTOR")
@@ -399,45 +474,49 @@ class ETCGUI(tk.Tk):
         ttk.Label(f, text="QE wavelength unit:").grid(row=8, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.qe_unit_var, state="readonly",
                      values=("Angstrom", "nm", "um"), width=10).grid(row=8, column=1, sticky="ew")
-        self.slit_resolution_path_var = self._var("slit_resolution_curve_path", "")
-        ttk.Label(f, text="Calibrated slit R (width):").grid(row=9, column=0, sticky="w")
-        resolution_row = ttk.Frame(f); resolution_row.grid(row=9, column=1, sticky="ew")
-        resolution_row.columnconfigure(0, weight=1)
-        ttk.Entry(resolution_row, textvariable=self.slit_resolution_path_var, width=14).grid(row=0, column=0, sticky="ew")
-        ttk.Button(resolution_row, text="Browse…", command=self._choose_slit_resolution_curve).grid(row=0, column=1, padx=(3, 0))
-        # Sensor type: monochrome CCD/CMOS, or a colour (one-shot-colour /
-        # Bayer) sensor read out one R/G/B channel at a time.  The channel
-        # selector is greyed out for a monochrome sensor.
-        self.sensor_type_var = self._var("sensor_type", "monochrome")
-        if self.sensor_type_var.get() in ("mono", "osc"):  # migrate old values
-            self.sensor_type_var.set({"mono": "monochrome", "osc": "color"}[self.sensor_type_var.get()])
+        # Non-linearity limit in ADU: the maximum count before the response
+        # departs from linear.  Empty means the ADC ceiling (2^bits), i.e. no
+        # non-linear regime is flagged; a value 0 < v <= 2^bits flags counts
+        # above it as NON LIN (below hard saturation) in the result tables.
+        self.nonlin_limit_var = self._var("nonlinearity_limit_adu", "")
+        ttk.Label(f, text="Non-linearity limit (ADU):").grid(row=9, column=0, sticky="w")
+        ttk.Entry(f, textvariable=self.nonlin_limit_var, width=20).grid(row=9, column=1, sticky="ew", pady=1)
+        # Sensor: detector technology (CCD/CMOS) and mono vs one-shot-colour.
+        # The CMOS gain table is only active for a CMOS detector.
+        self.detector_tech_var = self._var("detector_technology", "CMOS")
+        self.sensor_type_var = self._var("sensor_type", "mono")
+        if self.sensor_type_var.get() in ("monochrome", "osc"):  # migrate old values
+            self.sensor_type_var.set({"monochrome": "mono", "osc": "color"}[self.sensor_type_var.get()])
         self.osc_channel_var = self._var("osc_channel", "G")
-        ttk.Label(f, text="Sensor type:").grid(row=10, column=0, sticky="w")
+        ttk.Label(f, text="Sensor:").grid(row=10, column=0, sticky="w")
         sensor_row = ttk.Frame(f); sensor_row.grid(row=10, column=1, sticky="ew")
+        self.detector_tech_combo = ttk.Combobox(sensor_row, textvariable=self.detector_tech_var,
+                                                state="readonly", width=5, values=("CCD", "CMOS"))
+        self.detector_tech_combo.pack(side="left")
         self.sensor_type_combo = ttk.Combobox(sensor_row, textvariable=self.sensor_type_var, state="readonly",
-                                               width=11, values=("monochrome", "color"))
-        self.sensor_type_combo.grid(row=0, column=0, sticky="w")
-        ttk.Label(sensor_row, text=" channel:").grid(row=0, column=1)
+                                               width=6, values=("mono", "color"))
+        self.sensor_type_combo.pack(side="left", padx=(3, 0))
+        ttk.Label(sensor_row, text=" CH:").pack(side="left")
         self.osc_channel_combo = ttk.Combobox(sensor_row, textvariable=self.osc_channel_var, state="readonly",
-                                               width=4, values=("R", "G", "B"))
-        self.osc_channel_combo.grid(row=0, column=2, sticky="w")
+                                               width=3, values=("R", "G", "B"))
+        self.osc_channel_combo.pack(side="left")
         self.sensor_type_var.trace_add("write", lambda *_: self._update_sensor_channel_state())
+        self.detector_tech_var.trace_add("write", lambda *_: self._update_detector_tech_state())
         self._update_sensor_channel_state()
-#        ttk.Label(f, text="color: a one-shot-colour (Bayer) sensor read one channel at a time "
-#                          "(R/B use 1/4, G 1/2 of the pixels). Supply that channel's effective QE "
-#                          "(sensor QE x colour-filter dye).",
-#                  foreground="gray35", wraplength=300, justify="left").grid(row=11, column=0, columnspan=2, sticky="w")
         self.gain_table_path_var = self._var("gain_table_path", "")
         self.gain_setting_var = tk.StringVar(value="")
         self.gain_table_rows = []
-        ttk.Label(f, text="CMOS gain table:").grid(row=12, column=0, sticky="w")
+        self.gain_table_label = ttk.Label(f, text="CMOS gain table:")
+        self.gain_table_label.grid(row=12, column=0, sticky="w")
         gain_row = ttk.Frame(f); gain_row.grid(row=12, column=1, sticky="ew")
         gain_row.columnconfigure(0, weight=1)
         self.gain_setting_combo = ttk.Combobox(gain_row, textvariable=self.gain_setting_var,
                                                state="disabled", width=8, values=())
         self.gain_setting_combo.grid(row=0, column=0, sticky="ew")
         self.gain_setting_combo.bind("<<ComboboxSelected>>", lambda _event: self._apply_gain_setting())
-        ttk.Button(gain_row, text="Browse…", command=self._choose_gain_table).grid(row=0, column=1, padx=(3, 0))
+        self.gain_table_browse = ttk.Button(gain_row, text="Browse…", command=self._choose_gain_table)
+        self.gain_table_browse.grid(row=0, column=1, padx=(3, 0))
+        self._update_detector_tech_state()
  #       ttk.Label(f, text="Gain table rows: setting, e-/ADU, read noise e-, full well e-. Selecting a"
  #                         " setting fills the three detector fields.",
  #                 foreground="gray35", wraplength=300, justify="left").grid(row=13, column=0, columnspan=2, sticky="w")
@@ -463,14 +542,16 @@ class ETCGUI(tk.Tk):
         self._entry(f, 0, "Seeing FWHM (arcsec):", self.seeing_var)
         ttk.Label(f, text="Sky background:").grid(row=1, column=0, sticky="w")
         ttk.Combobox(f, textvariable=self.sky_model_var, state="readonly", values=("ing", "fixed_ab", "sqm")).grid(row=1, column=1, sticky="ew")
-        self._entry(f, 2, "Fixed sky (AB mag/arcsec2):", self.sky_var)
-        self.sqm_var = self._var("sqm_v_mag_arcsec2", "20.8")
+        # A single sky-brightness input serves both the fixed-AB and the SQM
+        # modes (both are a mag/arcsec2 surface brightness); it is interpreted
+        # in the system implied by the selected sky-background mode.
+        self._entry(f, 2, "Sky mag / SQM mag (mag/arcsec2):", self.sky_var)
+        self.sqm_var = self.sky_var  # merged input; sqm mode reads the same value
         self.bortle_var = tk.StringVar(value="")
-        self._entry(f, 6, "SQM zenith (V mag/arcsec2):", self.sqm_var)
-        ttk.Label(f, text="Bortle class preset:").grid(row=7, column=0, sticky="w")
+        ttk.Label(f, text="Bortle class preset:").grid(row=5, column=0, sticky="w")
         bortle_combo = ttk.Combobox(f, textvariable=self.bortle_var, state="readonly", width=6,
                                     values=tuple(str(i) for i in range(1, 10)))
-        bortle_combo.grid(row=7, column=1, sticky="ew")
+        bortle_combo.grid(row=5, column=1, sticky="ew")
         bortle_combo.bind("<<ComboboxSelected>>", lambda _event: self._apply_bortle_preset())
 #        ttk.Label(f, text="sqm mode: your zenith SQM reading sets the V sky; band colours and the"
 #                          " Moon model are applied on top. Bortle preset fills a typical SQM.",
@@ -512,16 +593,8 @@ class ETCGUI(tk.Tk):
 #                          "Moffat reproduces real seeing wings; beta 2.5-4.7 (Gaussian limit).",
 #                  foreground="gray35", wraplength=300, justify="left").grid(row=5, column=0, columnspan=2, sticky="w")
 
-        self.response_preview_section = self._section(holder, "SYSTEM RESPONSE")
-        self.response_preview_status = tk.StringVar(value="Select an observing filter and a stellar template.")
-        ttk.Label(self.response_preview_section, textvariable=self.response_preview_status, foreground="blue",
-                  wraplength=300, justify="left").grid(row=0, column=0, sticky="w")
-        self.response_preview_figure = Figure(figsize=(3.2, 1.75), dpi=100)
-        self.response_preview_axis = self.response_preview_figure.add_subplot(111)
-        self.response_preview_canvas = FigureCanvasTkAgg(self.response_preview_figure, master=self.response_preview_section)
-        self.response_preview_canvas.get_tk_widget().grid(row=1, column=0, sticky="ew", pady=(3, 0))
-        self.response_preview_section.pack_forget()
-
+        # The SYSTEM RESPONSE preview is built at the end of the data column
+        # (below the stellar-template selector), not here.
         # The instrument-profile save/load buttons now live at the end of the
         # DETECTOR box (built above).
         self.eff_var.trace_add("write", lambda *_: self._update_combined_response_preview())
@@ -534,6 +607,22 @@ class ETCGUI(tk.Tk):
         if hasattr(self, "osc_channel_combo"):
             is_color = self.sensor_type_var.get().strip().lower() in ("color", "colour", "osc")
             self.osc_channel_combo.configure(state="readonly" if is_color else "disabled")
+
+    def _update_detector_tech_state(self):
+        """The CMOS gain table is active only for a CMOS detector."""
+        if not hasattr(self, "gain_setting_combo"):
+            return
+        is_cmos = self.detector_tech_var.get().strip().upper() == "CMOS"
+        self.gain_table_browse.configure(state="normal" if is_cmos else "disabled")
+        # Keep the setting selector readonly (and only if a table is loaded).
+        if not is_cmos:
+            self.gain_setting_combo.configure(state="disabled")
+        elif self.gain_table_rows:
+            self.gain_setting_combo.configure(state="readonly")
+        try:
+            self.gain_table_label.configure(foreground="" if is_cmos else "#a0a0a0")
+        except tk.TclError:
+            pass
 
     def _labeled_entry(self, frame, row, text, variable, width=20):
         """Grid a label + entry like _entry, but return the Entry widget."""
@@ -742,6 +831,20 @@ class ETCGUI(tk.Tk):
                                 (3, "Extraction height (arcsec):", self.extract_var),
                                 (4, "Pixels / slit res. element:", self.sampling_var)]:
             self._slit_widgets.append(self._labeled_entry(f, row, label, var))
+        # Calibrated slit-R(width) curve (moved here from the detector box):
+        # a slit-mode input that overrides the nominal R within its range.
+        self.slit_resolution_path_var = self._var("slit_resolution_curve_path", "")
+        slit_r_label = ttk.Label(f, text="Calibrated R(width) curve:")
+        slit_r_label.grid(row=22, column=0, sticky="w")
+        slit_r_row = ttk.Frame(f); slit_r_row.grid(row=22, column=1, sticky="ew")
+        slit_r_browse = ttk.Button(slit_r_row, text="Browse…", command=self._choose_slit_resolution_curve)
+        slit_r_browse.pack(side="left")
+        slit_r_clear = ttk.Button(slit_r_row, text="Clear", command=self._clear_slit_resolution_curve)
+        slit_r_clear.pack(side="left", padx=(3, 0))
+        self.slit_resolution_status = tk.StringVar(value="none")
+        ttk.Label(f, textvariable=self.slit_resolution_status, foreground="#1f4f82",
+                  wraplength=280).grid(row=23, column=0, columnspan=2, sticky="w")
+        self._slit_widgets += [slit_r_browse, slit_r_clear]
         # Slitless-only fields.
         for row, label, var in [(5, "Slitless cross-disp extraction:", self.slitless_width_var),
                                 (6, "Slitless dispersion (A/pix):", self.slitless_dispersion_var),
@@ -851,7 +954,7 @@ class ETCGUI(tk.Tk):
         ttk.Label(f, text="Spectral type search:").grid(row=3, column=0, sticky="w")
         ttk.Entry(f, textvariable=self.star_search_var).grid(row=3, column=1, sticky="ew")
         self.star_search_var.trace_add("write", lambda *_: self._refresh_star_list())
-        self.star_tree = ttk.Treeview(f, columns=("name", "spt", "bv"), show="headings", height=7)
+        self.star_tree = ttk.Treeview(f, columns=("name", "spt", "bv"), show="headings", height=5)
         self.star_tree.heading("name", text="Name")
         self.star_tree.heading("spt", text="SpT")
         self.star_tree.heading("bv", text="B-V")
@@ -878,6 +981,17 @@ class ETCGUI(tk.Tk):
                                          highlightbackground="#b5b5b5")
         self.template_canvas.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(2, 0))
         self.template_canvas.bind("<Configure>", lambda _event: self._update_template_display())
+
+        # System-response preview lives here, below the template selector.
+        self.response_preview_section = self._section(holder, "SYSTEM RESPONSE")
+        self.response_preview_status = tk.StringVar(value="Select an observing filter and a stellar template.")
+        ttk.Label(self.response_preview_section, textvariable=self.response_preview_status, foreground="blue",
+                  wraplength=320, justify="left").grid(row=0, column=0, sticky="w")
+        self.response_preview_figure = Figure(figsize=(3.4, 1.8), dpi=100)
+        self.response_preview_axis = self.response_preview_figure.add_subplot(111)
+        self.response_preview_canvas = FigureCanvasTkAgg(self.response_preview_figure, master=self.response_preview_section)
+        self.response_preview_canvas.get_tk_widget().grid(row=1, column=0, sticky="ew", pady=(3, 0))
+        self.response_preview_section.pack_forget()
 
     def _build_actions_column(self, holder):
         f = self._section(holder, "RUN ETC")
@@ -1546,9 +1660,32 @@ class ETCGUI(tk.Tk):
             self.throughput_source_path = Path(path).resolve()
             self.throughput_path_var.set(str(self.throughput_source_path))
             self.profile_status.set(f"Instrument transmission loaded: {self.throughput_source_path.name}.")
-            self.status_var.set("Instrument transmission curve loaded."); self._update_combined_response_preview()
+            self.status_var.set("Instrument transmission curve loaded.")
+            self._update_throughput_exclusive()
+            self._update_combined_response_preview()
         except (OSError, ValueError) as exc:
             messagebox.showerror("Instrument transmission", str(exc))
+
+    def _clear_throughput_curve(self):
+        """Drop the loaded response curve and re-enable the scalar throughput."""
+        self.throughput_curve = None
+        self.throughput_source_path = None
+        self.throughput_path_var.set("")
+        self._update_throughput_exclusive()
+        self._update_combined_response_preview()
+
+    def _update_throughput_exclusive(self):
+        """The scalar optics throughput and a loaded response curve are mutually
+        exclusive: whichever is active greys out the other."""
+        if not hasattr(self, "throughput_scalar_entry"):
+            return
+        has_curve = self.throughput_curve is not None
+        self._set_widget_enabled(self.throughput_scalar_entry, not has_curve)
+        if has_curve:
+            name = getattr(self.throughput_source_path, "name", "curve")
+            self.throughput_curve_status.set(f"response curve: {name} (scalar throughput ignored)")
+        else:
+            self.throughput_curve_status.set("response curve: none (using scalar throughput)")
 
     def _on_qe_unit_changed(self):
         """Reinterpret the QE file when the user explicitly changes its unit."""
@@ -1591,9 +1728,18 @@ class ETCGUI(tk.Tk):
             self.slit_resolution_curve = curve
             self.slit_resolution_source_path = Path(path).resolve()
             self.slit_resolution_path_var.set(str(self.slit_resolution_source_path))
+            if hasattr(self, "slit_resolution_status"):
+                self.slit_resolution_status.set(f"R(width): {self.slit_resolution_source_path.name}")
             self.status_var.set("Calibrated slit-resolution curve loaded.")
         except (OSError, ValueError) as exc:
             messagebox.showerror("Slit resolution curve", str(exc))
+
+    def _clear_slit_resolution_curve(self):
+        self.slit_resolution_curve = None
+        self.slit_resolution_source_path = None
+        self.slit_resolution_path_var.set("")
+        if hasattr(self, "slit_resolution_status"):
+            self.slit_resolution_status.set("none")
 
     def _save_instrument_profile(self):
         if self.qe_source_path is None or not Path(self.qe_source_path).is_file():
@@ -2386,6 +2532,23 @@ class ETCGUI(tk.Tk):
                 extinction[i] = -2.5 * np.log10(rate / clear_rate)
         extinction_per_airmass = np.divide(extinction, airmass, out=np.full_like(extinction, np.nan),
                                             where=np.isfinite(airmass) & (airmass > 0))
+        # Per-sample photometric error budget in millimagnitudes: the total
+        # error is 1085.7 / (S/N), and the scintillation contribution is
+        # 1085.7 times the Young fractional rms at that airmass and exposure.
+        snr_array = np.asarray(snr_values, dtype=float)
+        exposure_array = np.asarray(exposure_values, dtype=float)
+        total_error_mmag = np.where(snr_array > 0, 1085.7 / np.where(snr_array > 0, snr_array, np.nan), np.nan)
+        scint_mmag = np.full(len(airmass), np.nan)
+        try:
+            diameter_mm = float(self.diam_var.get())
+            elevation_m = float(self.elev_var.get())
+            for i, x in enumerate(airmass):
+                if not np.isfinite(x) or not np.isfinite(exposure_array[i]) or exposure_array[i] <= 0:
+                    continue
+                scint_mmag[i] = 1085.7 * scintillation_fractional_rms(
+                    diameter_mm, x, elevation_m, exposure_array[i])
+        except (ValueError, tk.TclError):
+            pass
         frame = pd.DataFrame({
             "datetime_utc": [value.strftime("%Y-%m-%dT%H:%M:%S") for value in track["utc_datetime"]],
             "datetime_local": [value.strftime("%Y-%m-%dT%H:%M:%S") for value in track["local_datetime"]],
@@ -2394,8 +2557,10 @@ class ETCGUI(tk.Tk):
             "elevation_deg": np.asarray(track["alt_target"], dtype=float),
             "azimuth_deg": np.asarray(track["az_target"], dtype=float),
             "parallactic_angle_deg": np.asarray(track["parallactic_deg"], dtype=float),
-            "snr": np.asarray(snr_values, dtype=float),
-            "exptime_s": np.asarray(exposure_values, dtype=float),
+            "snr": snr_array,
+            "total_error_mmag": total_error_mmag,
+            "scintillation_mmag": scint_mmag,
+            "exptime_s": exposure_array,
             "airmass": airmass,
             "sky_mag_arcsec2": [model["sky_mag"] for model in sky_models],
             "sky_zero_point_jy": [model["sky_zero_point_jy"] for model in sky_models],
@@ -2445,11 +2610,17 @@ class ETCGUI(tk.Tk):
             visual_band = visual_profile.transmission
             observing_band = observing_profile.transmission
             atmo = self.earth_atmosphere_curve if self.earth_atmosphere_curve is not None else fcat.generic_zenith_atmosphere_curve()
+            nonlin_text = self.nonlin_limit_var.get().strip()
             detector = Detector(float(self.pixel_var.get()), float(self.gain_var.get()), float(self.fullwell_var.get()),
                                 int(self.bitdepth_var.get()), float(self.readnoise_var.get()), float(self.dark_var.get()),
-                                sensor_type=self.sensor_type_var.get(), osc_channel=self.osc_channel_var.get())
+                                sensor_type=self.sensor_type_var.get(), osc_channel=self.osc_channel_var.get(),
+                                nonlinearity_limit_adu=(nonlin_text or None))
+            # Scalar throughput and a calibrated response curve are mutually
+            # exclusive: when a curve is loaded the scalar efficiency is set to
+            # 1 so the two are not multiplied together.
+            optics_efficiency = 1.0 if self.throughput_curve is not None else float(self.eff_var.get())
             telescope = {"diameter_mm": float(self.diam_var.get()), "obstruction_mm": float(self.obstruct_var.get()),
-                         "efficiency": float(self.eff_var.get()), "focal_length_mm": float(self.focal_var.get()),
+                         "efficiency": optics_efficiency, "focal_length_mm": float(self.focal_var.get()),
                          "throughput_curve": self.throughput_curve,
                          "slit_resolution_curve": self.slit_resolution_curve}
             sky_models = self._sky_models_for_track(track, observing_vega_profile, ra, dec)
@@ -2481,19 +2652,27 @@ class ETCGUI(tk.Tk):
                 self._update_differential_precision(selected_calculator, result, exposure_used, run_kwargs)
                 scint_fraction = (result["scintillation_noise_e"]
                                   / max(result["photons_source_es"] * exposure_used, 1e-300))
+                scint_mmag = 1085.7 * scint_fraction
+                total_error_mmag = 1085.7 / result["snr"] if result["snr"] > 0 else float("inf")
+                flag_counts = self._frame_flag_counts(
+                    [results[i]["saturation_flag"] for i in results])
                 self._append_info_outputs([
                     f"mode / exposure   : photometry ({result['source_geometry']}) / {exposure_used:.1f} s",
                     f"S/N               : {result['snr']:.1f}",
+                    f"total error       : {total_error_mmag:.2f} mmag (1085.7 / S/N, this frame)",
                     f"aperture          : {result['n_pixels']:.0f} px",
                     f"scintillation     : {result['scintillation_noise_e']:.1f} e-  "
-                    f"({100.0 * scint_fraction:.2f}% of source)",
+                    f"({100.0 * scint_fraction:.2f}% of source, {scint_mmag:.2f} mmag)",
                     f"ADC quantization  : {result['digitization_noise_e']:.1f} e-",
                     f"peak pixel        : {result['peak_e_unclipped']:.0f} e- / "
                     f"{result['peak_adu_unclipped']:.0f} ADU  sat={result['saturation_flag']}  "
                     f"max single frame {result['max_unsaturated_exptime_s']:.1f} s",
+                    f"frames (visible)  : {flag_counts[0]} linear, {flag_counts[1]} non-linear, "
+                    f"{flag_counts[2]} saturated",
                     f"magnitudes        : standard {result['estimated_observing_magnitude']:.3f}, "
                     f"instrumental {result['instrumental_response_magnitude']:.3f} ({self.band_var.get()})",
                     f"sky used          : {result['sky_mag_arcsec2']:.2f} mag/arcsec2"]
+                    + self._airy_disk_lines(observing_profile.pivot_wavelength_aa)
                     + self._template_colour_lines())
                 # Magnitude sweep: the same configuration at target +/- 1..7 mag,
                 # shown greyed under a separator below the selected result.
@@ -2561,9 +2740,16 @@ class ETCGUI(tk.Tk):
                     f"res.el            : {spectrum.attrs['n_pixels_per_resel']:.0f} px; median scintillation "
                     f"{spectrum.attrs['scintillation_noise_e_median']:.1f} e-, ADC "
                     f"{spectrum.attrs['digitization_noise_e']:.1f} e-",
+                    f"at {reference_wl:.0f} A       : total error "
+                    f"{1085.7 / float(ref_row['snr']) if float(ref_row['snr']) > 0 else float('inf'):.2f} mmag, "
+                    f"scintillation {1085.7 * spectrum.attrs['scintillation_noise_e_median'] / max(float(ref_row['photons_source_es']) * exposure_used, 1e-300):.2f} mmag",
                     f"saturation at ref : {ref_row['saturation_flag']}, max single frame "
                     f"{float(ref_row['max_unsaturated_exptime_s']):.1f} s",
+                    f"frames (visible)  : "
+                    + "%d linear, %d non-linear, %d saturated"
+                      % self._frame_flag_counts(list(saturation)),
                     f"sky used          : {spectrum.attrs['sky_mag_arcsec2']:.2f} mag/arcsec2"]
+                    + self._airy_disk_lines(reference_wl)
                     + self._template_colour_lines() + self._rv_dispersion_lines()
                     + self._spectrum_geometry_lines(spectrum))
                 self._display_table(spectrum, "wavelength_aa"); self.result_df = spectrum
@@ -2589,6 +2775,7 @@ class ETCGUI(tk.Tk):
             else:
                 self.status_var.set("Complete")
             self._save_config()
+            self._save_session_outputs()
 #        except Exception as exc:
 #            self.status_var.set("Error")
 #            messagebox.showerror("ETC error", f"{exc}\n\n{traceback.format_exc()}")
@@ -2753,6 +2940,36 @@ class ETCGUI(tk.Tk):
         except (ValueError, ZeroDivisionError, tk.TclError):
             return float("nan")
 
+    def _airy_disk_lines(self, pivot_aa):
+        """Airy-disk diameter 2.44 lambda/D in arcsec and detector pixels."""
+        try:
+            diam_m = float(self.diam_var.get()) * 1e-3
+            lam_m = float(pivot_aa) * 1e-10
+            if diam_m <= 0 or lam_m <= 0:
+                return []
+            diameter_arcsec = 2.44 * lam_m / diam_m * 206265.0
+            plate = self._plate_scale_arcsec_pix()
+            diameter_pix = diameter_arcsec / plate if plate > 0 else float("nan")
+            return [f"Airy disk         : {diameter_arcsec:.3f} arcsec diameter "
+                    f"({diameter_pix:.2f} px) at {float(pivot_aa):.0f} A"]
+        except (ValueError, ZeroDivisionError, tk.TclError):
+            return []
+
+    @staticmethod
+    def _frame_flag_counts(flags):
+        """(linear, non-linear, saturated) counts from a list of SAT flags."""
+        linear = nonlin = saturated = 0
+        for flag in flags:
+            if flag in (None, "NOT_VISIBLE"):
+                continue
+            if flag == "NONE":
+                linear += 1
+            elif flag == "NON_LIN":
+                nonlin += 1
+            else:
+                saturated += 1
+        return linear, nonlin, saturated
+
     SPEED_OF_LIGHT_KMS = 299792.458
 
     def _template_colour_lines(self):
@@ -2887,10 +3104,15 @@ class ETCGUI(tk.Tk):
             messagebox.showinfo("No plot", "Run the ETC first."); return
         self.plot_window.deiconify(); self.plot_window.lift(); self.plot_window.focus_force()
 
+    def _export_dir(self):
+        """Default the save dialogs to the active session directory, if any."""
+        return str(self.session_dir) if self.session_dir is not None else ""
+
     def _export_csv(self):
         if self.result_df is None:
             messagebox.showinfo("No result", "Run the ETC first."); return
-        path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])
+        path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")],
+                                            initialdir=self._export_dir())
         if path: self.result_df.to_csv(path, index=False)
 
     def _export_time_series_csv(self):
@@ -2898,7 +3120,7 @@ class ETCGUI(tk.Tk):
             messagebox.showinfo("No time series", "Run the ETC first.")
             return
         path = filedialog.asksaveasfilename(defaultextension=".csv", initialfile="etc_time_series.csv",
-                                            filetypes=[("CSV", "*.csv")])
+                                            filetypes=[("CSV", "*.csv")], initialdir=self._export_dir())
         if path:
             self.time_series_df.to_csv(path, index=False)
 

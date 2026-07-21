@@ -724,6 +724,64 @@ def test_detector_nonlinearity_flag_and_fw_adc_rename():
             Detector(13.5, 1.0, 1e9, 16, nonlinearity_limit_adu=value + 2 ** 16 + 1)
 
 
+def test_defocus_donut_geometry_and_encircled_energy():
+    """Round-6: geometric defocused-PSF (donut) radii, obstruction hole and the
+    analytic encircled-energy law, including sign symmetry and the reflector
+    (obstruction=0) filled-disc limit."""
+    from defocus import defocus_donut_profile, defocus_encircled_energy, _donut_radii_um
+    diameter, focal, obstruction, pixel = 358.0, 2000.0, 87.5, 5.0
+    # Blur radius is delta * D / (2F); the hole is eps = obstruction / D.
+    r_in, r_out = _donut_radii_um(100.0, diameter, focal, obstruction)
+    assert abs(r_out - 100.0 * diameter / (2.0 * focal)) < 1e-9
+    assert abs(r_in / r_out - obstruction / diameter) < 1e-9
+    profile = defocus_donut_profile(100.0, diameter, focal, obstruction, pixel)
+    # Encircled energy is 0 at the inner edge, 1 at the outer edge, 0.5 at the
+    # equal-area radius sqrt((eps^2+1)/2) * r_out.
+    assert defocus_encircled_energy(profile["r_in_arcsec"], 100.0, diameter, focal, obstruction) == 0.0
+    assert abs(defocus_encircled_energy(profile["r_out_arcsec"], 100.0, diameter, focal, obstruction) - 1.0) < 1e-9
+    eps = profile["epsilon"]
+    r_half = profile["r_out_arcsec"] * ((eps**2 + 1.0) / 2.0) ** 0.5
+    assert abs(defocus_encircled_energy(r_half, 100.0, diameter, focal, obstruction) - 0.5) < 1e-6
+    # Intra/extra-focal sign does not change the donut size.
+    assert (defocus_encircled_energy(0.5, 100.0, diameter, focal, obstruction)
+            == defocus_encircled_energy(0.5, -100.0, diameter, focal, obstruction))
+    # Classical reflector (obstruction=0) -> filled disc, no hole.
+    reflector = defocus_donut_profile(100.0, diameter, focal, 0.0, pixel)
+    assert reflector["epsilon"] == 0.0
+    assert reflector["r_in_arcsec"] == 0.0
+    # A zero defocus has no donut and must be rejected.
+    import numpy as _np
+    with _np.testing.assert_raises(ValueError):
+        _donut_radii_um(0.0, diameter, focal, obstruction)
+
+
+def test_defocus_photometry_spreads_light_and_lowers_peak():
+    """Round-6: in the engine, defocus geometry captures the donut encircled
+    energy in the aperture and the peak pixel drops far below the focused
+    point-source peak for the same star."""
+    from photometry import PhotometryETC
+    wavelength = np.linspace(4000.0, 7000.0, 200)
+    template = np.column_stack((wavelength, np.full_like(wavelength, 1e-12)))
+    band = np.column_stack((wavelength, np.ones_like(wavelength)))
+    qe = np.column_stack((wavelength, np.full_like(wavelength, 0.8)))
+    telescope = {"diameter_mm": 358.0, "obstruction_mm": 87.5, "efficiency": 0.7, "focal_length_mm": 2000.0}
+    detector = Detector(5.0, 1.0, 1e9, 16)
+    atmosphere = {"airmass": 1.0, "seeing_arcsec": 2.0, "transmission_curve": None}
+    sky = {"sky_mag": 21.0, "sky_zero_point_jy": 3631.0, "sky_at_telescope": True,
+           "aperture_radius_arcsec": 4.0}
+    etc = PhotometryETC(telescope, detector, atmosphere, sky)
+    # A bright star so the peak pixel is source-dominated (the donut spreading
+    # is what we test, not the constant sky pedestal).
+    focused = etc.compute_photometry_single(template, band, qe, 6.0, 10.0, source_geometry="point")
+    defocused = etc.compute_photometry_single(template, band, qe, 6.0, 10.0,
+                                              source_geometry="defocus", defocus_position_um=400.0)
+    # Spreading the star over a big donut drops the peak source rate far below
+    # the focused point-source peak, while the wide aperture still captures the
+    # whole donut.
+    assert defocused["peak_rate_e_s"] < 0.2 * focused["peak_rate_e_s"]
+    assert 0.0 < defocused["defocus_captured_fraction"] <= 1.0
+
+
 if __name__ == "__main__":
     test_explicit_nm_qe_conversion()
     test_svo_energy_and_photon_semantics_differ_for_coloured_sed()
@@ -774,5 +832,7 @@ if __name__ == "__main__":
     test_slit_resolution_clamped_by_geometry()
     test_guiding_blur_lowers_slit_throughput()
     test_rv_shift_and_reddening_transform()
+    test_defocus_donut_geometry_and_encircled_energy()
+    test_defocus_photometry_spreads_light_and_lowers_peak()
     print("PASS: v9 spectral pipeline safeguards + v10 physics regressions "
           "+ v10.2 audit-fix regressions (A1, A2, D1, B1-B11)")
